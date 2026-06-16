@@ -8,10 +8,6 @@ on:
 permissions:
   contents: write
 
-concurrency:
-  group: refresh
-  cancel-in-progress: false
-
 jobs:
   build:
     runs-on: windows-latest
