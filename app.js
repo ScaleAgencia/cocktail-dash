@@ -249,6 +249,7 @@ function buildPresets(){
 function init(){
   document.getElementById('updated').textContent = 'Atualizado: '+D.generatedAtBR;
   document.getElementById('qualNote').textContent = 'Qualificado = '+D.qualification;
+  document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
   document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
