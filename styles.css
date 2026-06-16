@@ -106,4 +106,20 @@ tbody tr:hover{background:#f7fafd}
 .objdot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:middle}
 #objTable td:first-child{font-weight:600}
 
+/* voices / verbatims */
+.voices{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.voice{border:1px solid var(--line);border-radius:10px;padding:6px 12px;background:#fbfdff}
+.voice summary{cursor:pointer;font-weight:700;font-size:13.5px;padding:5px 0;list-style:none;display:flex;align-items:center;gap:2px}
+.voice summary::-webkit-details-marker{display:none}
+.voice summary::before{content:"▸";color:var(--blue2);margin-right:8px;font-size:12px}
+.voice[open] summary::before{content:"▾"}
+.voice summary .sub{font-weight:400;margin-left:8px}
+.vblock{margin:8px 0 10px}
+.vlbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:6px;font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.termchip{background:#eef4fb;border:1px solid #dce8f5;border-radius:20px;padding:3px 10px;font-size:12px;color:#2a3f52}
+.termchip b{color:var(--blue2)}
+ul.quotes{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+ul.quotes li{font-size:13px;color:#33414f;font-style:italic;line-height:1.4}
+
 @media(max-width:980px){ .grid{grid-template-columns:1fr} .obj-grid{grid-template-columns:1fr} .objrow{grid-template-columns:130px 1fr 84px} }

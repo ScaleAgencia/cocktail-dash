@@ -146,6 +146,29 @@ foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K
     $obk=GetObjB $d $m.bucket; $obk.buyers++ } else { $o=GetGrain $d 'NAO_ATRIBUIDO' 'NAO_ATRIBUIDO' 'NAO_ATRIBUIDO' }
   $o.sales++; $o.revenue += $rev }
 
+# ===================================================================
+#  VERBATIMS — o que as QUALIFICADAS relatam, por objecao (base completa)
+# ===================================================================
+$qVerb=@{}   # bucket -> hashtable(texto -> contagem)
+foreach($r in $ld){
+  if((Norm $r[$L_FAT]) -notin $QUAL_MENSAL){ continue }
+  $t = Norm $r[$L_DESAFIO]
+  if($t.Length -lt 3 -or $t.Length -gt 160){ continue }
+  if($t -match '@' -or $t -match 'http' -or $t -match '\d{4,}'){ continue }     # sem PII (email/telefone/cpf)
+  $collapsed = ($t.ToLower() -replace '\s','')
+  if(($collapsed.ToCharArray() | Select-Object -Unique).Count -le 1){ continue } # aaaa / .... / xxxx
+  $b = Bucket $r[$L_DESAFIO]
+  if(-not $qVerb.ContainsKey($b)){ $qVerb[$b]=@{} }
+  if($qVerb[$b].ContainsKey($t)){ $qVerb[$b][$t]++ } else { $qVerb[$b][$t]=1 }
+}
+$objQuotes = foreach($b in $OBJ_ORDER){
+  if(-not $qVerb.ContainsKey($b)){ continue }
+  $h=$qVerb[$b]
+  $terms = $h.GetEnumerator() | Where-Object { $_.Value -ge 2 } | Sort-Object Value -Descending | Select-Object -First 14 | ForEach-Object { [pscustomobject]@{ t=$_.Key; n=$_.Value } }
+  $examples = $h.Keys | Where-Object { $_.Length -ge 25 } | Sort-Object { $_.Length } -Descending | Select-Object -First 8
+  [pscustomobject]@{ bucket=$b; total=(($h.Values | Measure-Object -Sum).Sum); distinct=$h.Count; terms=@($terms); examples=@($examples) }
+}
+
 # ---- emit ----------------------------------------------------------
 $dailyArr  = $daily.Values  | Sort-Object date
 $grainArr  = $grain.Values  | Where-Object { $_.leads -gt 0 -or $_.spend -gt 0 -or $_.sales -gt 0 } | Sort-Object date
@@ -166,8 +189,9 @@ $out = [pscustomobject]@{
   grain = $grainArr
   objLeads = ($objLeads.Values | Sort-Object date)
   objBuyers = ($objBuyers.Values | Sort-Object date)
+  objQuotes = @($objQuotes)
 }
-$json = $out | ConvertTo-Json -Depth 6 -Compress
+$json = $out | ConvertTo-Json -Depth 8 -Compress
 $utf8 = [System.Text.UTF8Encoding]::new($false)
 [System.IO.File]::WriteAllText((Join-Path $root 'data.json'), $json, $utf8)
 # data.js lets the dashboard load without fetch (works on file:// and GitHub Pages alike)

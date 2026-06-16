@@ -24,6 +24,7 @@ const money = v => 'R$ ' + nf2.format(v||0);
 const int   = v => nf0.format(Math.round(v||0));
 const pct   = v => (v||0).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
 const safe  = (a,b) => (b>0 ? a/b : 0);
+const esc   = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])).replace(/\s*\n\s*/g,' ');
 
 // ---- date utils (YYYY-MM-DD) ----
 const parseD = s => { const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); };
@@ -260,6 +261,23 @@ function renderObjections(){
       <td>${pct(r.qp)} <span class="sub">(${int(r.q)})</span></td>
       <td>${pct(r.bp)} <span class="sub">(${int(r.b)})</span></td>
       <td>${idxCell}</td></tr>`;
+  }).join('');
+  renderObjVoices();
+}
+
+function renderObjVoices(){
+  const box=document.getElementById('objVoices');
+  if(!box) return;
+  const qs=D.objQuotes||[];
+  if(!qs.length){ box.innerHTML='<div class="sub">Sem depoimentos.</div>'; return; }
+  box.innerHTML=qs.map((o,i)=>{
+    const terms=(o.terms||[]).map(x=>`<span class="termchip">${esc(x.t)} <b>×${x.n}</b></span>`).join('');
+    const ex=(o.examples||[]).map(q=>`<li>“${esc(q)}”</li>`).join('');
+    return `<details class="voice"${i===0?' open':''}>
+      <summary><span class="objdot" style="background:${objColor(o.bucket)}"></span>${objLabel(o.bucket)} <span class="sub">${int(o.total)} qualificadas · ${int(o.distinct)} relatos distintos</span></summary>
+      ${terms?`<div class="vblock"><div class="vlbl">Mais citados</div><div class="chips">${terms}</div></div>`:''}
+      ${ex?`<div class="vblock"><div class="vlbl">Exemplos (na voz delas)</div><ul class="quotes">${ex}</ul></div>`:''}
+    </details>`;
   }).join('');
 }
 
