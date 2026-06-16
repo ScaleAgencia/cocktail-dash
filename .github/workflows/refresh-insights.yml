@@ -2,7 +2,7 @@ name: Refresh insights (semanal)
 
 on:
   schedule:
-    - cron: '0 8 * * 1'      # toda segunda ~05:00 BRT
+    - cron: '27 8 * * 1'     # toda segunda ~05:27 BRT
   workflow_dispatch:
 
 permissions:

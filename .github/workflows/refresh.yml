@@ -2,7 +2,7 @@ name: Refresh tráfego (3h)
 
 on:
   schedule:
-    - cron: '0 */3 * * *'    # a cada 3 horas
+    - cron: '17 */3 * * *'   # a cada 3 horas (minuto :17 para evitar o pico do topo da hora)
   workflow_dispatch:
 
 permissions:
