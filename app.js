@@ -360,6 +360,65 @@ function renderInsights(){
   body.innerHTML=html;
 }
 
+// ===================== funnel health score =====================
+function healthBand(s){
+  if(s>=75) return {label:'Excelente', color:'#2e9e3f'};
+  if(s>=58) return {label:'Saudável', color:'#3ea66d'};
+  if(s>=42) return {label:'Atenção', color:'#e9a23b'};
+  return {label:'Crítico', color:'#e0483a'};
+}
+function computeHealth(cur, prev){
+  const c=metrics(cur), p=metrics(prev);
+  const lin=(v,g,b)=>Math.max(0,Math.min(100,(v-b)/(g-b)*100));
+  const comps=[];
+  comps.push({label:'CPL Qualificado', score:(cur.qlf>0?lin(c.cplqlf,70,220):0), detail:(cur.qlf>0?money(c.cplqlf):'—'), w:0.25});
+  comps.push({label:'CAC', score:(cur.sales>0?lin(c.cac,800,2200):(cur.spend>0?5:50)), detail:(cur.sales>0?money(c.cac):'sem vendas'), w:0.18});
+  comps.push({label:'Taxa de qualificação', score:(cur.leads>0?lin(c.txqual,40,10):50), detail:pct(c.txqual), w:0.20});
+  comps.push({label:'Conversão da página', score:(cur.lpv>0?lin(c.convlp,10,4):50), detail:pct(c.convlp), w:0.12});
+  comps.push({label:'ROAS', score:(cur.spend>0?lin(c.roas,5,1.5):50), detail:(c.roas).toLocaleString('pt-BR',{maximumFractionDigits:2})+'x', w:0.13});
+  const qd=c.txqual-p.txqual, cplChg=(p.cplqlf>0?(c.cplqlf-p.cplqlf)/p.cplqlf*100:0);
+  let sTrend=50 + Math.max(-25,Math.min(25,qd*4)) + Math.max(-25,Math.min(25,-cplChg*0.4));
+  sTrend=Math.max(0,Math.min(100,sTrend));
+  comps.push({label:'Tendência (vs período anterior)', score:sTrend, detail:(qd>=0?'+':'')+qd.toFixed(1)+'pp qualif', w:0.12});
+  const total = comps.reduce((s,x)=>s+x.score*x.w,0)/comps.reduce((s,x)=>s+x.w,0);
+  return {score:Math.round(total), band:healthBand(total), comps};
+}
+function gaugeSVG(score,color){
+  const r=52, C=2*Math.PI*r, arc=score/100*C;
+  return `<svg viewBox="0 0 130 130" class="gauge">
+    <circle cx="65" cy="65" r="${r}" fill="none" stroke="#e7edf3" stroke-width="13"/>
+    <circle cx="65" cy="65" r="${r}" fill="none" stroke="${color}" stroke-width="13" stroke-linecap="round" stroke-dasharray="${arc.toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 65 65)"/>
+    <text x="65" y="62" text-anchor="middle" font-size="34" font-weight="800" fill="#1f2933">${score}</text>
+    <text x="65" y="84" text-anchor="middle" font-size="12" fill="#7b8794">de 100</text>
+  </svg>`;
+}
+function renderHealth(cur,prev){
+  const h=computeHealth(cur,prev);
+  const sorted=[...h.comps].sort((a,b)=>b.score-a.score);
+  const best=sorted[0], worst=sorted[sorted.length-1];
+  const verdict = `Mais forte em <b>${best.label.toLowerCase()}</b>. ` +
+    (worst.score<55 ? `Ponto de atenção: <b>${worst.label.toLowerCase()}</b>.` : `Sem gargalos críticos no período.`);
+  const bars = h.comps.map(c=>{
+    const col = c.score>=70?'var(--green)':(c.score>=45?'var(--yellow)':'var(--red)');
+    return `<div class="hcomp">
+      <div class="hc-top"><span>${c.label}</span><span class="hc-val">${c.detail}</span></div>
+      <div class="hc-bar"><div style="width:${c.score.toFixed(0)}%;background:${col}"></div></div>
+    </div>`;
+  }).join('');
+  const card=document.getElementById('healthCard');
+  card.style.borderLeft='6px solid '+h.band.color;
+  card.innerHTML = `
+    <div class="health-left">
+      ${gaugeSVG(h.score,h.band.color)}
+      <div class="health-label" style="color:${h.band.color}">${h.band.label}</div>
+    </div>
+    <div class="health-right">
+      <div class="health-title">Saúde geral do funil <span class="sub">· período selecionado</span></div>
+      <div class="health-verdict">${verdict}</div>
+      <div class="hcomps">${bars}</div>
+    </div>`;
+}
+
 // ===================== render all =====================
 function render(){
   document.getElementById('rangeLbl').textContent = `${state.start.split('-').reverse().join('/')} → ${state.end.split('-').reverse().join('/')} (${dayspan(state.start,state.end)} dias)`;
@@ -370,6 +429,7 @@ function render(){
   const prevEnd=fmtD(addDays(parseD(state.start),-1));
   const prevStart=fmtD(addDays(parseD(prevEnd),-(len-1)));
   const prev=sumDaily(prevStart,prevEnd);
+  renderHealth(cur,prev);
   renderInvest(cur);
   renderFunnel(cur,prev);
   renderTable();
