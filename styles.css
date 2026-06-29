@@ -87,6 +87,18 @@ tbody td:first-child{text-align:left;max-width:360px;overflow:hidden;text-overfl
 tbody tr:hover{background:#f7fafd}
 .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-weight:700;color:#fff;font-size:11.5px}
 .sub{color:var(--muted);font-weight:400;font-size:11px}
+/* árvore de otimização (campanha > conjunto > anúncio) */
+.trow[data-k="1"]{cursor:pointer}
+.trow td.tlabel{text-align:left;max-width:380px;overflow:hidden;text-overflow:ellipsis}
+.trow.lvl0 td{border-top:2px solid #e8edf2}
+.trow.lvl0 td.tlabel{font-weight:800}
+.trow.lvl1{background:#f6f9fc}
+.trow.lvl1 td.tlabel{font-weight:600;color:#33414f}
+.trow.lvl2{background:#fcfdfe}
+.trow.lvl2 td.tlabel{font-weight:400;color:#5a6775;font-size:12px}
+.trow[data-k="1"]:hover{background:#eef4fb}
+.caret{display:inline-block;width:15px;color:var(--blue2);font-size:11px}
+.caret0{display:inline-block;width:15px}
 .foot{color:var(--muted);font-size:11.5px;text-align:center;margin-top:18px;padding-top:10px;border-top:1px solid var(--line)}
 
 /* funnel health score */

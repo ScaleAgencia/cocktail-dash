@@ -119,41 +119,43 @@ function renderInvest(cur){
 }
 
 // ---- optimization table ----
-const COLS=[
-  {k:'label',t:'Nome',num:false},
-  {k:'spend',t:'Gasto',f:money},
-  {k:'leads',t:'Leads',f:int},
-  {k:'qlf',t:'QLF',f:int},
-  {k:'txqual',t:'% Qualif',f:pct,calc:r=>safe(r.qlf,r.leads)*100},
-  {k:'cplqlf',t:'CPL QLF',f:v=>v,calc:r=>safe(r.spend,r.qlf),pill:true},
-  {k:'sales',t:'Vendas',f:int},
-  {k:'cac',t:'CAC',f:money,calc:r=>safe(r.spend,r.sales)},
-  {k:'ctr',t:'CTR',f:pct,calc:r=>safe(r.clicks,r.impr)*100}
-];
+const expanded = new Set();
+function nodeM(){ return {spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0}; }
+function addM(o,r){ o.spend+=r.spend;o.impr+=r.impr;o.clicks+=r.clicks;o.lpv+=r.lpv;o.leads+=r.leads;o.qlf+=r.qlf;o.sales+=r.sales;o.revenue+=r.revenue; }
+function buildTree(start,end){
+  const camps=new Map();
+  for(const r of D.grain){ if(r.date<start||r.date>end) continue;
+    let c=camps.get(r.campaign); if(!c){ c={key:'c:'+r.campaign,label:pretty(r.campaign),m:nodeM(),kids:new Map()}; camps.set(r.campaign,c); } addM(c.m,r);
+    let a=c.kids.get(r.adset); if(!a){ a={key:'a:'+r.campaign+'¦'+r.adset,label:pretty(r.adset),m:nodeM(),kids:new Map()}; c.kids.set(r.adset,a); } addM(a.m,r);
+    let d=a.kids.get(r.ad); if(!d){ d={key:'d:'+r.campaign+'¦'+r.adset+'¦'+r.ad,label:pretty(r.ad),m:nodeM(),kids:null}; a.kids.set(r.ad,d); } addM(d.m,r);
+  }
+  const arr=[...camps.values()].sort((x,y)=>y.m.spend-x.m.spend);
+  for(const c of arr){ c.kidsArr=[...c.kids.values()].sort((x,y)=>y.m.spend-x.m.spend);
+    for(const a of c.kidsArr){ a.kidsArr=[...a.kids.values()].sort((x,y)=>y.m.spend-x.m.spend); } }
+  return arr;
+}
+function treeRow(node,level,hasKids){
+  const m=node.m, cplqlf=safe(m.spend,m.qlf), cac=safe(m.spend,m.sales), ctr=safe(m.clicks,m.impr)*100, txq=safe(m.qlf,m.leads)*100;
+  const car = hasKids ? `<span class="caret">${expanded.has(node.key)?'▾':'▸'}</span>` : '<span class="caret0"></span>';
+  return `<tr class="trow lvl${level}" data-key="${esc(node.key)}" data-k="${hasKids?1:0}">
+    <td class="tlabel" style="padding-left:${8+level*22}px">${car}${esc(node.label)}</td>
+    <td>${money(m.spend)}</td><td>${int(m.leads)}</td><td>${int(m.qlf)}</td><td>${pct(txq)}</td>
+    <td>${cplPill(cplqlf,m.qlf)}</td><td>${int(m.sales)}</td><td>${m.sales>0?money(cac):'—'}</td><td>${pct(ctr)}</td></tr>`;
+}
 function cplPill(v,qlf){
   if(qlf<=0) return '<span class="pill" style="background:#aab4bf">—</span>';
   const col = v<=90?'var(--green)':(v<=TARGET_CPL_QLF?'var(--yellow)':'var(--red)');
   return `<span class="pill" style="background:${col}">${money(v)}</span>`;
 }
 function renderTable(){
-  const rows=groupGrain(state.start,state.end,state.level);
-  for(const r of rows){ for(const c of COLS){ if(c.calc) r[c.k]=c.calc(r); } }
-  const s=state.sort;
-  rows.sort((a,b)=> s.asc ? (a[s.key]>b[s.key]?1:-1) : (a[s.key]<b[s.key]?1:-1));
-  const thead=document.querySelector('#optTable thead');
-  thead.innerHTML='<tr>'+COLS.map(c=>`<th data-k="${c.k}" class="${s.key===c.k?'sorted '+(s.asc?'asc':''):''}">${c.t}</th>`).join('')+'</tr>';
-  thead.querySelectorAll('th').forEach(th=>th.onclick=()=>{
-    const k=th.dataset.k; if(state.sort.key===k) state.sort.asc=!state.sort.asc; else state.sort={key:k,asc:(k==='label'||k==='cplqlf')};
-    renderTable();
-  });
-  const tb=document.querySelector('#optTable tbody');
-  tb.innerHTML=rows.map(r=>{
-    return '<tr>'+COLS.map(c=>{
-      if(c.k==='label') return `<td>${r.label}${r.sub?`<div class="sub">${r.sub}</div>`:''}</td>`;
-      if(c.k==='cplqlf') return `<td>${cplPill(r.cplqlf,r.qlf)}</td>`;
-      return `<td>${c.f(r[c.k])}</td>`;
-    }).join('')+'</tr>';
-  }).join('');
+  const tree=buildTree(state.start,state.end);
+  document.querySelector('#optTable thead').innerHTML='<tr><th class="tlabel">Campanha › Conjunto › Anúncio</th><th>Gasto</th><th>Leads</th><th>QLF</th><th>%Qualif</th><th>CPL QLF</th><th>Vendas</th><th>CAC</th><th>CTR</th></tr>';
+  let rows='';
+  for(const c of tree){ rows+=treeRow(c,0,c.kidsArr.length>0);
+    if(expanded.has(c.key)) for(const a of c.kidsArr){ rows+=treeRow(a,1,a.kidsArr.length>0);
+      if(expanded.has(a.key)) for(const d of a.kidsArr){ rows+=treeRow(d,2,false); } } }
+  document.querySelector('#optTable tbody').innerHTML=rows;
+  document.querySelectorAll('#optTable .trow[data-k="1"]').forEach(tr=>tr.onclick=()=>{ const k=tr.dataset.key; if(expanded.has(k)) expanded.delete(k); else expanded.add(k); renderTable(); });
 }
 
 // ---- sales by campaign ----

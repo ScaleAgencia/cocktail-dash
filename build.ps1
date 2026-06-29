@@ -51,7 +51,9 @@ function MoneyKiwify($s){ $s=Norm $s; if($s -eq ''){return 0.0}
   if($s -match '\.'){ return [double]::Parse($s,[Globalization.CultureInfo]::InvariantCulture) } # US: 4997.00
   $v=[double]$s; if($v -ge 100000){ return $v/100 } else { return $v } }            # bare integer cents -> reais
 function ToInt($s){ $s=Norm $s; if($s -eq ''){return 0}; return [int]([double]($s -replace '\.','' -replace ',','.')) }
-function AdCode($s){ $s=Norm $s; if($s -match '(AD\d+)'){ return $Matches[1] }; return $s }
+function AdCode($s){ $s=Norm $s; if($s -match '(AD\d+(_V\d+)?)'){ return $Matches[1] }; return $s }   # preserva versao _V2/_V3 (criativos novos), ignora descritor de formato (_VIDEO_LDE etc.)
+# utm que veio com macro do Meta nao resolvida ({{campaign.name}} etc.) = sem rastreio util
+function CleanUtm($s){ $s=Norm $s; if($s -match '\{\{|\}\}|\{'){ return '' }; return $s }
 function HdrIndex($hdr,$name){ for($i=0;$i -lt $hdr.Count;$i++){ if((Norm $hdr[$i]) -eq $name){ return $i } }; return -1 }
 # accent-safe matcher: match on an ASCII fragment so PS5.1 literal-encoding can't break it
 function HdrLike($hdr,$pat){ for($i=0;$i -lt $hdr.Count;$i++){ if((Norm $hdr[$i]) -like $pat){ return $i } }; return -1 }
@@ -137,12 +139,12 @@ foreach($r in $qd){ $d=Norm $r[$Q_DAY]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){c
 # lead email -> utm (for sales attribution); keep most recent lead per email
 $leadByEmail=@{}
 foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); if($e -eq ''){continue}
-  $leadByEmail[$e]=[pscustomobject]@{campaign=(Norm $r[$L_CAMP]);adset=(Norm $r[$L_SET]);ad=(AdCode $r[$L_CONT]);bucket=(Bucket $r[$L_DESAFIO])} }
+  $leadByEmail[$e]=[pscustomobject]@{campaign=(CleanUtm $r[$L_CAMP]);adset=(CleanUtm $r[$L_SET]);ad=(AdCode (CleanUtm $r[$L_CONT]));bucket=(Bucket $r[$L_DESAFIO])} }
 
 foreach($r in $ld){ $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){continue}
-  $c=Norm $r[$L_CAMP]; if($c -eq ''){$c='SEM_UTM'}
-  $s=Norm $r[$L_SET];  if($s -eq ''){$s='SEM_UTM'}
-  $a=AdCode $r[$L_CONT]; if($a -eq ''){$a='SEM_UTM'}
+  $c=CleanUtm $r[$L_CAMP]; if($c -eq ''){$c='SEM_UTM'}
+  $s=CleanUtm $r[$L_SET];  if($s -eq ''){$s='SEM_UTM'}
+  $a=AdCode (CleanUtm $r[$L_CONT]); if($a -eq ''){$a='SEM_UTM'}
   $o=GetGrain $d $c $s $a; $o.leads++; if((Norm $r[$L_FAT]) -in $QUAL_MENSAL){ $o.qlf++ } }
 
 # buyer objections per purchase day (only matched buyers have a known desafio)
