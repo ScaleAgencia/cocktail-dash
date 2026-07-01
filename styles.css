@@ -108,9 +108,6 @@ tbody tr:hover{background:#f7fafd}
 .statc-s{font-size:11px;color:var(--muted);margin-top:2px}
 .perfil-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
 .note-card{border-left:4px solid var(--blue2);background:#f7fafd}
-.sinal-hero{border-left:4px solid var(--green);background:#f4fbf6}
-.sinal-big{font-size:40px;font-weight:800;color:var(--green);margin-top:12px;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
-.sinal-big-l{font-size:13px;font-weight:600;color:#41505e;max-width:380px;line-height:1.35}
 @media(max-width:980px){ .perfil-grid{grid-template-columns:1fr} }
 /* tooltip dos gráficos */
 .hz{cursor:pointer}

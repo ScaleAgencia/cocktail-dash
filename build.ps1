@@ -304,8 +304,6 @@ $leadStudy=@{}
 foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); if($e -eq ''){continue}; $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){continue}
   if(-not $leadStudy.ContainsKey($e) -or $d -lt $leadStudy[$e].date){
     $leadStudy[$e]=[pscustomobject]@{date=$d;fat=(Norm $r[$L_FAT]);voce=(Norm $r[$L_VOCE]);eq=(Norm $r[$L_EQ]);freq=(Norm $r[$L_FREQ]);intent=(Norm $r[$L_INTENT]);desafio=(Norm $r[$L_DESAFIO])} } }
-$intentLeads=@{}
-foreach($v in $leadStudy.Values){ if($v.intent -eq ''){continue}; if(-not $intentLeads.ContainsKey($v.intent)){$intentLeads[$v.intent]=0}; $intentLeads[$v.intent]++ }
 # compradoras casadas (paid + e-mail casa com lead datado)
 $buyers=New-Object System.Collections.Generic.List[object]
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $pr=Norm $r[$K_DATE]; if($pr -notmatch '^\d{2}/\d{2}/\d{4}'){continue}
@@ -340,18 +338,10 @@ $qc=@(); foreach($b in $buyers){ $t=Norm $b.desafio; if($t.Length -lt 22 -or $t.
   if($t -match '@' -or $t -match 'http' -or $t -match '\d{4,}'){continue}
   $col=($t.ToLower() -replace '\s',''); if(($col.ToCharArray()|Select-Object -Unique).Count -le 4){continue}; $qc+=$t }
 $quotes=@($qc | Select-Object -Unique | Select-Object -First 12)
-# -- sinal: conversao por intencao (lead -> compra) --
-$intentBuyers=@{}; foreach($b in $buyers){ if($b.intent -eq ''){continue}; if(-not $intentBuyers.ContainsKey($b.intent)){$intentBuyers[$b.intent]=0}; $intentBuyers[$b.intent]++ }
-$intentConv=@(); foreach($it in $intentLeads.Keys){ $lc=$intentLeads[$it]; $bc=0; if($intentBuyers.ContainsKey($it)){$bc=$intentBuyers[$it]}
-  $cv=0.0; if($lc){$cv=[math]::Round($bc/$lc*100,2)}; $intentConv+=[pscustomobject]@{label=(CleanOpt $it);leads=$lc;buyers=$bc;conv=$cv} }
-$intentConv=@($intentConv | Sort-Object conv -Descending)
-$subN=($buyers | Where-Object { $_.fat -ne '' -and $_.fat -notin $QUAL_MENSAL }).Count
-$subPct=0; if($nB){$subPct=[math]::Round($subN/$nB*100,0)}
 $estudo=[pscustomobject]@{
   generatedAt=$nowIso; generatedAtBR=$nowBR; buyersTotal=$paidCount; buyersMatched=$nB; ticket=$ticket; fatMedia=$fatMedia
   tempo=[pscustomobject]@{n=$dpos.Count;mean=$tMean;median=$tMed;within3=$w3;within7=$w7;buckets=@($tempoBk)}
   perfil=[pscustomobject]@{fatDist=@($fatDist);voce=@($voceDist);intent=@($intentDist);equipe=@($eqDist);objec=@($objDist);quotes=@($quotes)}
-  sinal=[pscustomobject]@{intentConv=@($intentConv);subQualN=$subN;subQualPct=$subPct}
 }
 
 # ---- emit (por modo) ----------------------------------------------

@@ -512,7 +512,6 @@ function renderDaily(){
 
 // ===================== estudo das compradoras (3 abas) =====================
 function arr(x){ return Array.isArray(x)?x:(x?[x]:[]); }
-const pc2 = v => (v==null?0:v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'%';
 function bars(list,color){
   list=arr(list); if(!list.length) return '<div class="sub">Sem dados.</div>';
   const max=Math.max(...list.map(x=>x.pct))||1;
@@ -554,27 +553,6 @@ function renderPerfil(){
   const qs=arr(P.quotes);
   document.getElementById('pQuotes').innerHTML = qs.length ? `<ul class="quotes">${qs.map(q=>`<li>“${esc(q)}”</li>`).join('')}</ul>` : '';
 }
-function renderSinal(){
-  const S=ESTUDO.sinal||{}; const conv=arr(S.intentConv); if(!conv.length){ return; }
-  document.getElementById('sinalIntro').innerHTML = `Análise autoral cruzando todas as fontes. Base: ${int(ESTUDO.buyersMatched)} compradoras casadas.`;
-  const top=conv[0], bottom=conv[conv.length-1];
-  const ratio = bottom.conv>0 ? Math.round(top.conv/bottom.conv) : null;
-  document.getElementById('sinalHero').innerHTML =
-    `<div class="chart-title">A intenção de pagamento prevê a compra melhor que o faturamento</div>
-     <div class="ins-text">Quem respondeu <b>“${esc(top.label)}”</b> converte a <b>${pc2(top.conv)}</b> — ${ratio?`<b>${ratio}× mais</b>`:'muito mais'} que quem respondeu “${esc(bottom.label)}” (${pc2(bottom.conv)}). É o filtro mais forte que a sua base tem.</div>
-     <div class="sinal-big">${ratio?ratio+'×':'—'}<span class="sinal-big-l">mais chance de compra: “à vista / parcelar” vs “tenho dúvidas financeiras”</span></div>`;
-  const max=Math.max(...conv.map(c=>c.conv))||1;
-  document.getElementById('sinalConv').innerHTML = conv.map(x=>{
-    const col = x===top?'var(--green)':(x===bottom?'var(--red)':'var(--yellow)');
-    return `<div class="objrow"><div class="objlabel" title="${esc(x.label)}">${esc(x.label)}</div>
-      <div class="objbar"><div class="objfill" style="width:${Math.max(3,x.conv/max*100).toFixed(1)}%;background:${col}"></div></div>
-      <div class="objval">${pc2(x.conv)} <span class="sub">(${int(x.buyers)}/${int(x.leads)})</span></div></div>`;
-  }).join('');
-  document.getElementById('sinalNote').innerHTML =
-    `<div class="chart-title">💡 Dois achados que mudam a operação</div>
-     <div class="ins-text">1) <b>${int(S.subQualPct)}% das compradoras faturam abaixo de R$ 100 mil</b> — o corte de “qualificado” só por faturamento deixa <b>${int(S.subQualN)} vendas</b> de fora da conta. A intenção captura essas.</div>
-     <div class="ins-action">→ Qualifique e priorize o lead também pela <b>intenção de pagamento</b>, não só pelo faturamento. Mande os “à vista / parcelar” pro time <b>na hora</b> (metade compra em ${int((ESTUDO.tempo||{}).median||3)} dias) e nutra os “tenho dúvidas” com prova social e parcelamento antes de gastar tempo comercial.</div>`;
-}
 
 // ===================== presets & init =====================
 function setRange(s,e){ state.start=s<DMIN?DMIN:s; state.end=e>DMAX?DMAX:e; render(); }
@@ -605,8 +583,8 @@ function init(){
   document.getElementById('qualNote').textContent = 'Qualificado = '+D.qualification;
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
-  const PAGES=['funnel','obj','insights','tempo','perfil','sinal'];
-  const NOCTRL=['insights','tempo','perfil','sinal']; // abas de base completa (sem seletor de período)
+  const PAGES=['funnel','obj','insights','tempo','perfil'];
+  const NOCTRL=['insights','tempo','perfil']; // abas de base completa (sem seletor de período)
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
     const pg=b.dataset.page;
@@ -621,12 +599,11 @@ function init(){
   document.getElementById('goalInput').onchange=e=>{ localStorage.setItem('ccn_goal',e.target.value||15000); render(); };
   const [s,e]=lastN(30); setRange(s,e);
   renderInsights();
-  renderTempo(); renderPerfil(); renderSinal();
+  renderTempo(); renderPerfil();
   const hash=location.hash.toLowerCase();
   if(hash.includes('insight')){ document.querySelector('.pagebtn[data-page="insights"]').click(); }
   else if(hash.includes('obj')){ document.querySelector('.pagebtn[data-page="obj"]').click(); }
   else if(hash.includes('tempo')){ document.querySelector('.pagebtn[data-page="tempo"]').click(); }
   else if(hash.includes('perfil')||hash.includes('compradora')){ document.querySelector('.pagebtn[data-page="perfil"]').click(); }
-  else if(hash.includes('sinal')){ document.querySelector('.pagebtn[data-page="sinal"]').click(); }
 }
 init();
