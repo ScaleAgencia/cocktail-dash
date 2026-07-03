@@ -7,7 +7,7 @@ const ESTUDO = window.DASH_ESTUDO || {};
 const TARGET_CPL_QLF = 150;   // meta CPL qualificado (R$)
 const TARGET_CAC     = 1500;  // meta CAC (R$)
 const PRODUCT = 'Evento presencial para mulheres que já faturam acima de R$ 100 mil/mês — empresárias num patamar alto que querem escalar ainda mais, destravar e ir para o próximo nível.';
-const PRETTY = { 'SEM_UTM':'— sem rastreio —', 'NAO_ATRIBUIDO':'— não atribuído —' };
+const PRETTY = { 'SEM_UTM':'— sem rastreio —', 'NAO_ATRIBUIDO':'— não atribuído —', 'SEM_VENDEDORA':'— sem vendedora —' };
 const pretty = s => PRETTY[s] || s;
 const OBJ_LABELS = {
   'Equipe & Pessoas':'Equipe & Pessoas', 'Delegacao & Escala':'Delegação & Escala',
@@ -471,9 +471,52 @@ function render(){
   renderTable();
   renderDaily();
   renderSales();
+  renderComercial();
   renderLeadsChart();
   renderSpendChart();
   renderObjections();
+}
+
+// ===================== comercial (vendas por vendedora, period-aware) =====================
+function medalOr(n){ return n===1?'🥇':(n===2?'🥈':(n===3?'🥉':n)); }
+function renderComercial(){
+  const rows0=arr(D.sellers).filter(r=>r.date>=state.start && r.date<=state.end);
+  const map=new Map();
+  for(const r of rows0){ let o=map.get(r.seller); if(!o){o={seller:r.seller,sales:0,revenue:0};map.set(r.seller,o);} o.sales+=r.sales; o.revenue+=r.revenue; }
+  const all=[...map.values()];
+  const totSales=all.reduce((s,x)=>s+x.sales,0), totRev=all.reduce((s,x)=>s+x.revenue,0);
+  const named=all.filter(x=>x.seller!=='SEM_VENDEDORA').sort((a,b)=> b.sales-a.sales || b.revenue-a.revenue);
+  const blank=all.find(x=>x.seller==='SEM_VENDEDORA');
+  document.getElementById('comIntro').innerHTML =
+    `Vendas por vendedora (coluna "Tracking src" da Kiwify) no período selecionado. ${named.length} vendedora(s) ativa(s). Atualiza a cada 3h.`;
+  document.getElementById('comStats').innerHTML =
+    statCard(int(totSales),'Vendas no período') +
+    statCard(money(totRev),'Receita no período') +
+    statCard(money(totSales?totRev/totSales:0),'Ticket médio') +
+    statCard(int(named.length),'Vendedoras ativas');
+  const med=['🥇','🥈','🥉'], cl=['pod-1','pod-2','pod-3'];
+  document.getElementById('comPodium').innerHTML = named.length
+    ? named.slice(0,3).map((x,i)=>`<div class="pod ${cl[i]}"><div class="pod-medal">${med[i]}</div>
+        <div class="pod-name">${esc(pretty(x.seller))}</div>
+        <div class="pod-sales">${int(x.sales)}<span class="statc-u"> vendas</span></div>
+        <div class="pod-sub"><b>${pct(totSales?x.sales/totSales*100:0)}</b> do total · ${money(x.revenue)}</div></div>`).join('')
+    : '<div class="sub">Sem vendas no período selecionado.</div>';
+  const list=named.concat(blank?[blank]:[]);
+  const maxS=Math.max(1,...named.map(x=>x.sales));
+  document.querySelector('#comTable thead').innerHTML =
+    '<tr><th>#</th><th class="com-name">Vendedora</th><th>Vendas</th><th>Participação</th><th>Receita</th><th>Ticket médio</th></tr>';
+  document.querySelector('#comTable tbody').innerHTML = list.length ? list.map((x,i)=>{
+    const isB=x.seller==='SEM_VENDEDORA', share=totSales?x.sales/totSales*100:0, fill=(x.sales/maxS*100).toFixed(1);
+    return `<tr class="${isB?'com-blank':''}">
+      <td>${isB?'—':medalOr(i+1)}</td>
+      <td class="com-name">${esc(pretty(x.seller))}</td>
+      <td><b>${int(x.sales)}</b></td>
+      <td class="com-part"><span class="com-track"><span class="com-fill" style="width:${fill}%${isB?';background:var(--muted)':''}"></span></span>${pct(share)}</td>
+      <td>${money(x.revenue)}</td>
+      <td>${money(x.sales?x.revenue/x.sales:0)}</td></tr>`;
+  }).join('') : '<tr><td colspan="6" class="sub">Sem vendas no período.</td></tr>';
+  document.getElementById('comNote').innerHTML = blank
+    ? `⚠️ <b>${int(blank.sales)} venda(s)</b> sem vendedora marcada no "Tracking src" (${pct(totSales?blank.sales/totSales*100:0)} do período) — vale conferir a marcação na Kiwify pra atribuição ficar 100%.` : '';
 }
 
 // ===================== visão diária (tabela por dia, com heatmap) =====================
@@ -583,8 +626,8 @@ function init(){
   document.getElementById('qualNote').textContent = 'Qualificado = '+D.qualification;
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
-  const PAGES=['funnel','obj','insights','tempo','perfil'];
-  const NOCTRL=['insights','tempo','perfil']; // abas de base completa (sem seletor de período)
+  const PAGES=['funnel','obj','insights','comercial','tempo','perfil'];
+  const NOCTRL=['insights','tempo','perfil']; // abas de base completa (sem seletor de período); comercial usa o seletor
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
     const pg=b.dataset.page;

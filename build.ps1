@@ -100,7 +100,7 @@ $L_DATE=HdrIndex $lh 'Data Formatada'; $L_CAMP=HdrIndex $lh 'utm_campaign'; $L_S
 $L_CONT=HdrIndex $lh 'utm_content'; $L_SRC=HdrIndex $lh 'utm_source'; $L_DESAFIO=HdrLike $lh '*principal desafio*'
 
 $K_STAT=HdrIndex $kh 'Status'; $K_EMAIL=HdrIndex $kh 'Email'; $K_DATE=HdrIndex $kh 'Data Simplificada'
-$K_REV=HdrLike $kh 'Total com acr*'
+$K_REV=HdrLike $kh 'Total com acr*'; $K_SRC=HdrIndex $kh 'Tracking src'   # vendedora (comercial)
 # estudo das compradoras (padroes ASCII p/ nao quebrar no PS5.1)
 $L_VOCE=HdrLike $lh '*Voc*'                       # [5] "Você é…" (1o header com "Voc")
 $L_EQ=HdrLike $lh '*equipe*'                      # [6] tamanho da equipe
@@ -128,6 +128,17 @@ foreach($r in $ld){ $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){
 function BrDate($s){ $s=Norm $s; if($s -match '^(\d{2})/(\d{2})/(\d{4})'){ return "$($Matches[3])-$($Matches[2])-$($Matches[1])" }; return '' }
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $o=GetDay $d; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
+
+# vendas por dia × vendedora (coluna "Tracking src") — aba Comercial (period-aware)
+# normaliza caixa do nome (fonte mistura "Michele"/"michele" -> nao dividir a vendedora)
+function TitleName($s){ $s=Norm $s; if($s -eq ''){return ''}
+  return (($s -split '\s+') | ForEach-Object { if($_.Length -gt 0){ $_.Substring(0,1).ToUpper()+$_.Substring(1).ToLower() } }) -join ' ' }
+$sellers=@{}
+foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
+  $sv=TitleName $r[$K_SRC]; if($sv -eq ''){$sv='SEM_VENDEDORA'}
+  $key="$d`u$sv"; if(-not $sellers.ContainsKey($key)){ $sellers[$key]=[pscustomobject]@{date=$d;seller=$sv;sales=0;revenue=0.0} }
+  $o=$sellers[$key]; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
+$sellersArr=@($sellers.Values | Sort-Object date)
 
 # ===================================================================
 #  GRAIN (breakdown date|campaign|adset|ad) for optimization tables
@@ -353,7 +364,7 @@ if($Mode -eq 'all' -or $Mode -eq 'traffic'){
     generatedAt=$nowIso; generatedAtBR=$nowBR; taxMultiplier=$TAX
     qualification='Faturamento mensal acima de R$ 100 mil'
     dateMin=$dates[0]; dateMax=$dates[-1]; buyersTotal=$paidCount; buyersMatched=$matchedBuyers
-    daily=$dailyArr; grain=$grainArr })
+    daily=$dailyArr; grain=$grainArr; sellers=$sellersArr })
 }
 if($Mode -eq 'all' -or $Mode -eq 'objections'){
   WriteJs 'data-obj.js' 'DASH_OBJ' ([pscustomobject]@{

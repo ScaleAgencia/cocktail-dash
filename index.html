@@ -25,6 +25,7 @@
     <button class="pagebtn active" data-page="funnel">📊 Funil</button>
     <button class="pagebtn" data-page="obj">🧠 Objeções</button>
     <button class="pagebtn" data-page="insights">💡 Insights</button>
+    <button class="pagebtn" data-page="comercial">🏆 Comercial</button>
     <button class="pagebtn" data-page="tempo">⏱️ Tempo de compra</button>
     <button class="pagebtn" data-page="perfil">👤 Compradoras</button>
   </nav>
@@ -133,6 +134,24 @@
       <div class="ins-product" id="insProduct">—</div>
     </div>
     <div id="insBody"></div>
+  </div>
+
+  <div id="pageComercial" hidden>
+    <div class="card ins-head">
+      <div class="chart-title">🏆 Comercial — performance das vendedoras</div>
+      <div class="micro-note" id="comIntro">—</div>
+    </div>
+    <div class="stat-row" id="comStats"></div>
+    <div class="card">
+      <div class="chart-title">🏅 Pódio do período</div>
+      <div class="podium" id="comPodium"></div>
+    </div>
+    <div class="card">
+      <div class="chart-title">Ranking completo</div>
+      <div class="micro-note">Participação = fatia das vendas do período. Reage ao seletor de datas acima.</div>
+      <div class="table-scroll"><table id="comTable"><thead></thead><tbody></tbody></table></div>
+      <div class="micro-note" id="comNote" style="margin-left:0;margin-top:8px"></div>
+    </div>
   </div>
 
   <div id="pageTempo" hidden>
