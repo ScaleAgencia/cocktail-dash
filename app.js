@@ -482,8 +482,11 @@ function medalOr(n){ return n===1?'🥇':(n===2?'🥈':(n===3?'🥉':n)); }
 function renderComercial(){
   const rows0=arr(D.sellers).filter(r=>r.date>=state.start && r.date<=state.end);
   const map=new Map();
-  for(const r of rows0){ let o=map.get(r.seller); if(!o){o={seller:r.seller,sales:0,revenue:0};map.set(r.seller,o);} o.sales+=r.sales; o.revenue+=r.revenue; }
+  for(const r of rows0){ let o=map.get(r.seller); if(!o){o={seller:r.seller,sales:0,revenue:0,daysSum:0,daysN:0};map.set(r.seller,o);}
+    o.sales+=r.sales; o.revenue+=r.revenue; o.daysSum+=(r.daysSum||0); o.daysN+=(r.daysN||0); }
   const all=[...map.values()];
+  all.forEach(x=>{ x.avgDays = x.daysN>0 ? x.daysSum/x.daysN : null; });
+  const fmtDays = x => x.avgDays==null ? '—' : `${x.avgDays.toLocaleString('pt-BR',{maximumFractionDigits:1})} dias`;
   const totSales=all.reduce((s,x)=>s+x.sales,0), totRev=all.reduce((s,x)=>s+x.revenue,0);
   const named=all.filter(x=>x.seller!=='SEM_VENDEDORA').sort((a,b)=> b.sales-a.sales || b.revenue-a.revenue);
   const blank=all.find(x=>x.seller==='SEM_VENDEDORA');
@@ -499,24 +502,32 @@ function renderComercial(){
     ? named.slice(0,3).map((x,i)=>`<div class="pod ${cl[i]}"><div class="pod-medal">${med[i]}</div>
         <div class="pod-name">${esc(pretty(x.seller))}</div>
         <div class="pod-sales">${int(x.sales)}<span class="statc-u"> vendas</span></div>
-        <div class="pod-sub"><b>${pct(totSales?x.sales/totSales*100:0)}</b> do total · ${money(x.revenue)}</div></div>`).join('')
+        <div class="pod-sub"><b>${pct(totSales?x.sales/totSales*100:0)}</b> do total · ${money(x.revenue)}</div>
+        <div class="pod-close">⏱️ fecha em ~<b>${fmtDays(x)}</b></div></div>`).join('')
     : '<div class="sub">Sem vendas no período selecionado.</div>';
+  // destaque criativo: quem fecha mais rápido (min. 3 vendas casadas p/ ser significativo)
+  const fastest = named.filter(x=>x.daysN>=3).sort((a,b)=>a.avgDays-b.avgDays)[0];
   const list=named.concat(blank?[blank]:[]);
   const maxS=Math.max(1,...named.map(x=>x.sales));
   document.querySelector('#comTable thead').innerHTML =
-    '<tr><th>#</th><th class="com-name">Vendedora</th><th>Vendas</th><th>Participação</th><th>Receita</th><th>Ticket médio</th></tr>';
+    '<tr><th>#</th><th class="com-name">Vendedora</th><th>Vendas</th><th>Participação</th><th>Receita</th><th>Ticket médio</th><th>Fechamento médio</th></tr>';
   document.querySelector('#comTable tbody').innerHTML = list.length ? list.map((x,i)=>{
     const isB=x.seller==='SEM_VENDEDORA', share=totSales?x.sales/totSales*100:0, fill=(x.sales/maxS*100).toFixed(1);
+    const fast = (!isB && fastest && x.seller===fastest.seller);
     return `<tr class="${isB?'com-blank':''}">
       <td>${isB?'—':medalOr(i+1)}</td>
       <td class="com-name">${esc(pretty(x.seller))}</td>
       <td><b>${int(x.sales)}</b></td>
       <td class="com-part"><span class="com-track"><span class="com-fill" style="width:${fill}%${isB?';background:var(--muted)':''}"></span></span>${pct(share)}</td>
       <td>${money(x.revenue)}</td>
-      <td>${money(x.sales?x.revenue/x.sales:0)}</td></tr>`;
-  }).join('') : '<tr><td colspan="6" class="sub">Sem vendas no período.</td></tr>';
-  document.getElementById('comNote').innerHTML = blank
-    ? `⚠️ <b>${int(blank.sales)} venda(s)</b> sem vendedora marcada no "Tracking src" (${pct(totSales?blank.sales/totSales*100:0)} do período) — vale conferir a marcação na Kiwify pra atribuição ficar 100%.` : '';
+      <td>${money(x.sales?x.revenue/x.sales:0)}</td>
+      <td>${fmtDays(x)}${fast?' <span class="fast-badge">⚡ mais rápida</span>':''}</td></tr>`;
+  }).join('') : '<tr><td colspan="7" class="sub">Sem vendas no período.</td></tr>';
+  const parts=[];
+  if(fastest) parts.push(`⚡ <b>Fechamento mais rápido: ${esc(pretty(fastest.seller))}</b> (~${fmtDays(fastest)} entre a lead entrar e comprar).`);
+  if(blank) parts.push(`⚠️ <b>${int(blank.sales)} venda(s)</b> sem vendedora marcada no "Tracking src" (${pct(totSales?blank.sales/totSales*100:0)} do período) — vale conferir na Kiwify.`);
+  parts.push(`<span class="sub">Fechamento médio = dias entre a lead entrar e a compra; calculado só sobre as vendas casadas com a base de leads por e-mail.</span>`);
+  document.getElementById('comNote').innerHTML = parts.join('<br>');
 }
 
 // ===================== visão diária (tabela por dia, com heatmap) =====================
