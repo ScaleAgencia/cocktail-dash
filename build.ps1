@@ -135,18 +135,20 @@ function TitleName($s){ $s=Norm $s; if($s -eq ''){return ''}
   return (($s -split '\s+') | ForEach-Object { if($_.Length -gt 0){ $_.Substring(0,1).ToUpper()+$_.Substring(1).ToLower() } }) -join ' ' }
 # grafias diferentes da MESMA vendedora (corrige typo na fonte). Extensivel.
 $SELLER_ALIAS=@{ 'Evelyn'='Evellyn' }
-# primeiro contato (data mais antiga) por e-mail — p/ tempo de fechamento por vendedora
-$leadFirstDate=@{}
+# primeiro contato (data + faturamento) por e-mail — p/ tempo de fechamento e perfil por vendedora
+$leadFirst=@{}
 foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); if($e -eq ''){continue}; $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){continue}
-  if(-not $leadFirstDate.ContainsKey($e) -or $d -lt $leadFirstDate[$e]){ $leadFirstDate[$e]=$d } }
+  if(-not $leadFirst.ContainsKey($e) -or $d -lt $leadFirst[$e].date){ $leadFirst[$e]=[pscustomobject]@{date=$d;fat=(Norm $r[$L_FAT])} } }
 $sellers=@{}
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $sv=TitleName $r[$K_SRC]; if($SELLER_ALIAS.ContainsKey($sv)){ $sv=$SELLER_ALIAS[$sv] }; if($sv -eq ''){$sv='SEM_VENDEDORA'}
-  $key="$d`u$sv"; if(-not $sellers.ContainsKey($key)){ $sellers[$key]=[pscustomobject]@{date=$d;seller=$sv;sales=0;revenue=0.0;daysSum=0;daysN=0} }
+  $key="$d`u$sv"; if(-not $sellers.ContainsKey($key)){ $sellers[$key]=[pscustomobject]@{date=$d;seller=$sv;sales=0;revenue=0.0;daysSum=0;daysN=0;offN=0;classN=0} }
   $o=$sellers[$key]; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV])
   $e=(Norm $r[$K_EMAIL]).ToLower()
-  if($e -ne '' -and $leadFirstDate.ContainsKey($e)){ $l0=[datetime]::ParseExact($leadFirstDate[$e],'yyyy-MM-dd',$null); $p0=[datetime]::ParseExact($d,'yyyy-MM-dd',$null); $dd=($p0-$l0).Days
-    if($dd -ge 0){ $o.daysSum += $dd; $o.daysN++ } } }
+  if($e -ne '' -and $leadFirst.ContainsKey($e)){ $lf=$leadFirst[$e]
+    $l0=[datetime]::ParseExact($lf.date,'yyyy-MM-dd',$null); $p0=[datetime]::ParseExact($d,'yyyy-MM-dd',$null); $dd=($p0-$l0).Days
+    if($dd -ge 0){ $o.daysSum += $dd; $o.daysN++ }
+    if($lf.fat -ne ''){ $o.classN++; if($lf.fat -notin $QUAL_MENSAL){ $o.offN++ } } } }   # offN = compradora fora do perfil (<100k)
 $sellersArr=@($sellers.Values | Sort-Object date)
 
 # ===================================================================
