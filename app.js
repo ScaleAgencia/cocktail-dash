@@ -482,14 +482,13 @@ function medalOr(n){ return n===1?'🥇':(n===2?'🥈':(n===3?'🥉':n)); }
 function renderComercial(){
   const rows0=arr(D.sellers).filter(r=>r.date>=state.start && r.date<=state.end);
   const map=new Map();
-  for(const r of rows0){ let o=map.get(r.seller); if(!o){o={seller:r.seller,sales:0,revenue:0,daysSum:0,daysN:0,offN:0,classN:0};map.set(r.seller,o);}
-    o.sales+=r.sales; o.revenue+=r.revenue; o.daysSum+=(r.daysSum||0); o.daysN+=(r.daysN||0); o.offN+=(r.offN||0); o.classN+=(r.classN||0); }
+  for(const r of rows0){ let o=map.get(r.seller); if(!o){o={seller:r.seller,sales:0,revenue:0,daysSum:0,daysN:0,fat:[0,0,0,0,0,0]};map.set(r.seller,o);}
+    o.sales+=r.sales; o.revenue+=r.revenue; o.daysSum+=(r.daysSum||0); o.daysN+=(r.daysN||0);
+    const rf=arr(r.fat); for(let i=0;i<6;i++) o.fat[i]+=(rf[i]||0); }
   const all=[...map.values()];
-  all.forEach(x=>{ x.avgDays = x.daysN>0 ? x.daysSum/x.daysN : null; x.offPct = x.classN>0 ? x.offN/x.classN*100 : null; });
+  all.forEach(x=>{ x.avgDays = x.daysN>0 ? x.daysSum/x.daysN : null; });
   const fmtDays = x => x.avgDays==null ? '—' : `${x.avgDays.toLocaleString('pt-BR',{maximumFractionDigits:1})} dias`;
   const totSales=all.reduce((s,x)=>s+x.sales,0), totRev=all.reduce((s,x)=>s+x.revenue,0);
-  const totOff=all.reduce((s,x)=>s+x.offN,0), totClass=all.reduce((s,x)=>s+x.classN,0);
-  const offPctAll=totClass>0?totOff/totClass*100:0;
   const named=all.filter(x=>x.seller!=='SEM_VENDEDORA').sort((a,b)=> b.sales-a.sales || b.revenue-a.revenue);
   const blank=all.find(x=>x.seller==='SEM_VENDEDORA');
   document.getElementById('comIntro').innerHTML =
@@ -498,8 +497,7 @@ function renderComercial(){
     statCard(int(totSales),'Vendas no período') +
     statCard(money(totRev),'Receita no período') +
     statCard(money(totSales?totRev/totSales:0),'Ticket médio') +
-    statCard(int(named.length),'Vendedoras ativas') +
-    statCard(totClass?pct(offPctAll):'—','Fora do perfil (&lt;100k)', totClass?`${int(totOff)} de ${int(totClass)} casadas`:'');
+    statCard(int(named.length),'Vendedoras ativas');
   const med=['🥇','🥈','🥉'], cl=['pod-1','pod-2','pod-3'];
   document.getElementById('comPodium').innerHTML = named.length
     ? named.slice(0,3).map((x,i)=>`<div class="pod ${cl[i]}"><div class="pod-medal">${med[i]}</div>
@@ -531,19 +529,21 @@ function renderComercial(){
   if(blank) parts.push(`⚠️ <b>${int(blank.sales)} venda(s)</b> sem vendedora marcada no "Tracking src" (${pct(totSales?blank.sales/totSales*100:0)} do período) — vale conferir na Kiwify.`);
   parts.push(`<span class="sub">Fechamento médio = dias entre a lead entrar e a compra; calculado só sobre as vendas casadas com a base de leads por e-mail.</span>`);
   document.getElementById('comNote').innerHTML = parts.join('<br>');
-  // qualidade do perfil por vendedora (fatura >=100k dentro do alvo, <100k fora)
-  const prof=named.filter(x=>x.classN>0).sort((a,b)=> (b.offPct-a.offPct) || (b.offN-a.offN));
-  const worst=prof[0];
+  // faturamento das compradoras por vendedora (neutro — só visualizar a composição)
+  const fatRows=named.map(x=>({seller:x.seller,fat:x.fat,tot:x.fat.reduce((s,v)=>s+v,0)})).filter(x=>x.tot>0).sort((a,b)=>b.tot-a.tot);
+  const baseTot=fatRows.reduce((s,x)=>s+x.tot,0);
   document.getElementById('comProfIntro').innerHTML =
-    `Quanto das vendas de cada uma é <b>fora do alvo</b> — compradora que declarou faturar <b>menos de R$ 100 mil</b>. Base: ${int(totClass)} vendas casadas com a lista de leads no período (as demais não dá pra classificar). 🟩 dentro (≥100k) · 🟥 fora (&lt;100k).` +
-    (worst && worst.offPct>=30 ? ` <b style="color:var(--red)">Maior desvio: ${esc(pretty(worst.seller))} (${pct(worst.offPct)} fora).</b>` : '');
-  document.getElementById('comProfile').innerHTML = prof.length ? prof.map(x=>{
-    const inPct=100-x.offPct, col=x.offPct>=40?'var(--red)':(x.offPct>=25?'#e0772f':'var(--green)');
+    `Faixa de faturamento declarado das compradoras de cada vendedora — só pra visualizar a composição. Base: ${int(baseTot)} vendas casadas com a lista de leads no período (as que não casam não têm faturamento pra mostrar).`;
+  const legend=FAT_LABELS.map((l,i)=>`<span class="fatleg"><span class="fatsw" style="background:${FAT_COLORS[i]}"></span>${l}</span>`).join('');
+  document.getElementById('comProfile').innerHTML = `<div class="fatlegend">${legend}</div>` + (fatRows.length ? fatRows.map(x=>{
+    const segs=x.fat.map((c,i)=> c>0 ? `<span class="fatseg" style="width:${(c/x.tot*100).toFixed(1)}%;background:${FAT_COLORS[i]}" title="${FAT_LABELS[i]}: ${c}"></span>` : '').join('');
     return `<div class="qrow"><div class="objlabel" title="${esc(pretty(x.seller))}">${esc(pretty(x.seller))}</div>
-      <div class="qbar"><span class="qbar-in" style="width:${inPct.toFixed(1)}%"></span><span class="qbar-out" style="width:${x.offPct.toFixed(1)}%"></span></div>
-      <div class="qval"><b style="color:${col}">${pct(x.offPct)} fora</b> <span class="sub">(${int(x.offN)}/${int(x.classN)})</span></div></div>`;
-  }).join('') : '<div class="sub">Sem base classificável no período.</div>';
+      <div class="fatbar">${segs}</div>
+      <div class="qval"><b>${int(x.tot)}</b> <span class="sub">vendas</span></div></div>`;
+  }).join('') : '<div class="sub">Sem base no período.</div>');
 }
+const FAT_LABELS=['Menos de 5 mil','5–10 mil','10–50 mil','50–100 mil','100–200 mil','Acima de 200 mil'];
+const FAT_COLORS=['#dbe9f6','#b3d1ea','#84b4dd','#5695ce','#2f6fb0','#1a4a86']; // claro→escuro = menor→maior faturamento (neutro, sem juízo)
 
 // ===================== visão diária (tabela por dia, com heatmap) =====================
 function heat(v,min,max,mode){
