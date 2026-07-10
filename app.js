@@ -80,6 +80,28 @@ function deltaHTML(cur,prev,goodWhenUp=true){
   const arr = ch>0?'▲':(ch<0?'▼':'—');
   return `<span class="delta ${cls}">${arr} ${Math.abs(ch).toFixed(1)}%</span>`;
 }
+function deltaNeutral(cur,prev){
+  if(prev===0||prev==null) return '';
+  const ch=(cur-prev)/prev*100; const arr = ch>0?'▲':(ch<0?'▼':'—');
+  return `<span class="delta flat">${arr} ${Math.abs(ch).toFixed(1)}%</span>`;
+}
+const fmtRoas = v => (v==null?0:v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'x';
+// ---- bloco receita (investimento · receita · ROAS) ----
+function renderReceita(cur,prev){
+  const c=metrics(cur), p=metrics(prev);
+  document.getElementById('revInv').textContent = money(c.spend);
+  document.getElementById('revRec').textContent = money(c.revenue);
+  const roasEl=document.getElementById('revRoas'); roasEl.textContent = fmtRoas(c.roas);
+  const col = c.roas>=3?'var(--green)':(c.roas>=1?'var(--yellow)':'var(--red)');
+  roasEl.style.color = col; document.getElementById('revRoasCard').style.borderTopColor = col;
+  document.getElementById('revInvD').innerHTML = deltaNeutral(c.spend,p.spend);
+  document.getElementById('revRecD').innerHTML = deltaHTML(c.revenue,p.revenue);
+  document.getElementById('revRoasD').innerHTML = deltaHTML(c.roas,p.roas);
+  const inPct = c.revenue>0 ? Math.min(c.spend/c.revenue*100,100) : 0;
+  document.getElementById('revFoot').innerHTML =
+    `<div class="rev-bar"><div class="rev-bar-inv" style="width:${inPct.toFixed(1)}%"></div></div>
+     <div class="rev-bar-lbl">Cada <b>R$ 1,00</b> investido virou <b style="color:${col}">${money(c.roas)}</b> de receita <span class="sub">· ${money(c.spend)} → ${money(c.revenue)} no período · variações vs. período anterior</span></div>`;
+}
 
 // ---- funnel ----
 function renderFunnel(cur,prev){
@@ -466,6 +488,7 @@ function render(){
   const prevStart=fmtD(addDays(parseD(prevEnd),-(len-1)));
   const prev=sumDaily(prevStart,prevEnd);
   renderHealth(cur,prev);
+  renderReceita(cur,prev);
   renderInvest(cur);
   renderFunnel(cur,prev);
   renderTable();
