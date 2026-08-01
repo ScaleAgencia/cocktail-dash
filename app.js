@@ -581,15 +581,24 @@ function renderAscensao(){
   const D2=v=>v.split('-').reverse().join('/');
   document.getElementById('ascIntro').innerHTML =
     `A escada de valor do ecossistema no período (${D2(s)} → ${D2(e)}): tráfego → venda do Cocktail → ascensão pro Ápice (ingresso de <b>${money(ticket)}</b>). ${int(ASC.ascTotal)} de ${int(ASC.totalApice)} participantes do Ápice são rastreáveis como compradoras do Cocktail.`;
-  // hero: o salto de ROAS
+  // hero: faturamento total (Cocktail + Ápice) + salto de ROAS
+  const total=cRev+ascRev;
+  const pC=total>0?cRev/total*100:0, pA=total>0?ascRev/total*100:0;
   document.getElementById('ascHero').innerHTML =
-    `<div class="chart-title">O ROAS real, quando você conta a ascensão pro Ápice</div>
-     <div class="asc-roasrow">
-       <div class="asc-roas dim"><div class="asc-roas-v">${fmtRoas(roasC)}</div><div class="asc-roas-l">só Cocktail</div></div>
-       <div class="asc-plus">→</div>
-       <div class="asc-roas hot"><div class="asc-roas-v">${fmtRoas(roasEco)}</div><div class="asc-roas-l">com o Ápice</div></div>
+    `<div class="asc-hero-grid">
+       <div>
+         <div class="asc-htag">Faturamento total do ecossistema</div>
+         <div class="asc-total">${money(total)}</div>
+         <div class="asc-sub">Cocktail <b>${money(cRev)}</b> + Ápice <b>${money(ascRev)}</b> — sobre <b>${money(spend)}</b> de tráfego</div>
+       </div>
+       <div class="asc-roasbox">
+         <div class="asc-roas dim"><span class="asc-roas-v">${fmtRoas(roasC)}</span><span class="asc-roas-l">ROAS só Cocktail</span></div>
+         <div class="asc-plus">→</div>
+         <div class="asc-roas hot"><span class="asc-roas-v">${fmtRoas(roasEco)}</span><span class="asc-roas-l">ROAS com Ápice</span></div>
+       </div>
      </div>
-     <div class="ins-text">Cada participante do Ápice vale <b>${money(ticket)}</b>. Contando as ascensões, cada <b>R$ 1,00</b> investido em tráfego volta como <b style="color:var(--green)">${money(roasEco)}</b> de receita.</div>`;
+     <div class="asc-splitbar"><span class="asc-seg cock" style="width:${pC.toFixed(1)}%"></span><span class="asc-seg apic" style="width:${pA.toFixed(1)}%"></span></div>
+     <div class="asc-splitlbl"><span><i class="sw cock"></i>Cocktail — ${pct(pC)} do faturamento</span><span><i class="sw apic"></i>Ápice — ${pct(pA)} do faturamento</span></div>`;
   // stats
   document.getElementById('ascStats').innerHTML =
     statCard(asc>0?money(cacC):'—','CAC Cocktail','tráfego por venda') +
