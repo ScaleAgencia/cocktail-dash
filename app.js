@@ -5,6 +5,7 @@ const OBJ = window.DASH_OBJ || {};
 const INS = window.DASH_INSIGHTS || {};
 const ESTUDO = window.DASH_ESTUDO || {};
 const APICE = window.DASH_APICE || {};
+const ASC = window.DASH_ASC || {};
 const TARGET_CPL_QLF = 150;   // meta CPL qualificado (R$)
 const TARGET_CAC     = 1500;  // meta CAC (R$)
 const PRODUCT = 'Evento presencial para mulheres que já faturam acima de R$ 100 mil/mês — empresárias num patamar alto que querem escalar ainda mais, destravar e ir para o próximo nível.';
@@ -496,6 +497,7 @@ function render(){
   renderDaily();
   renderSales();
   renderComercial();
+  renderAscensao();
   renderLeadsChart();
   renderSpendChart();
   renderObjections();
@@ -566,6 +568,54 @@ function renderComercial(){
       <div class="qval"><b>${int(x.tot)}</b> <span class="sub">vendas</span></div></div>`;
   }).join('') : '<div class="sub">Sem base no período.</div>');
 }
+
+// ===================== ascensão (escada de valor Tráfego → Cocktail → Ápice) =====================
+function renderAscensao(){
+  if(!ASC.ascDaily){ return; }
+  const s=state.start, e=state.end, ticket=ASC.apiceTicket||150000;
+  let spend=0,cSales=0,cRev=0,asc=0;
+  for(const r of D.daily){ if(r.date<s||r.date>e) continue; spend+=r.spend; cSales+=r.sales; cRev+=r.revenue; }
+  for(const r of arr(ASC.ascDaily)){ if(r.date<s||r.date>e) continue; asc+=(r.asc||0); }
+  const cacC=cSales>0?spend/cSales:0, taxa=cSales>0?asc/cSales*100:0, cacA=asc>0?spend/asc:0;
+  const ascRev=asc*ticket, roasC=spend>0?cRev/spend:0, roasEco=spend>0?(cRev+ascRev)/spend:0;
+  const D2=v=>v.split('-').reverse().join('/');
+  document.getElementById('ascIntro').innerHTML =
+    `A escada de valor do ecossistema no período (${D2(s)} → ${D2(e)}): tráfego → venda do Cocktail → ascensão pro Ápice (ingresso de <b>${money(ticket)}</b>). ${int(ASC.ascTotal)} de ${int(ASC.totalApice)} participantes do Ápice são rastreáveis como compradoras do Cocktail.`;
+  // hero: o salto de ROAS
+  document.getElementById('ascHero').innerHTML =
+    `<div class="chart-title">O ROAS real, quando você conta a ascensão pro Ápice</div>
+     <div class="asc-roasrow">
+       <div class="asc-roas dim"><div class="asc-roas-v">${fmtRoas(roasC)}</div><div class="asc-roas-l">só Cocktail</div></div>
+       <div class="asc-plus">→</div>
+       <div class="asc-roas hot"><div class="asc-roas-v">${fmtRoas(roasEco)}</div><div class="asc-roas-l">com o Ápice</div></div>
+     </div>
+     <div class="ins-text">Cada participante do Ápice vale <b>${money(ticket)}</b>. Contando as ascensões, cada <b>R$ 1,00</b> investido em tráfego volta como <b style="color:var(--green)">${money(roasEco)}</b> de receita.</div>`;
+  // stats
+  document.getElementById('ascStats').innerHTML =
+    statCard(asc>0?money(cacC):'—','CAC Cocktail','tráfego por venda') +
+    statCard(cSales>0?pct(taxa):'—','Taxa de ascensão','viram Ápice') +
+    statCard(asc>0?money(cacA):'—','CAC Ápice','tráfego por ascensão') +
+    statCard(spend>0?fmtRoas(roasEco):'—','ROAS ecossistema','com Ápice');
+  // escada (3 degraus)
+  const stepH=[70,120,180]; // alturas crescentes
+  const steps=[
+    {c:'st-traf',ic:'💸',t:'Tráfego',v:money(spend),s:'investido (c/ imposto)'},
+    {c:'st-cock',ic:'🍸',t:'Cocktail',v:money(cRev),s:`${int(cSales)} vendas · CAC ${money(cacC)}`},
+    {c:'st-apic',ic:'👑',t:'Ápice',v:money(ascRev),s:`${int(asc)} ascensões · CAC ${asc>0?money(cacA):'—'}`}
+  ];
+  document.getElementById('ascLadder').innerHTML = steps.map((x,i)=>
+    `<div class="stepwrap"><div class="step ${x.c}" style="min-height:${stepH[i]}px">
+       <div class="step-ic">${x.ic}</div><div class="step-t">${x.t}</div>
+       <div class="step-v">${x.v}</div><div class="step-s">${x.s}</div></div></div>` +
+    (i<2?`<div class="step-conn">${i===0?`1 venda a cada<br><b>${money(cacC)}</b>`:`<b>${pct(taxa)}</b><br>sobem ↑`}</div>`:'')
+  ).join('');
+  // nota
+  document.getElementById('ascNote').innerHTML =
+    `<div class="chart-title">💡 O que isso quer dizer</div>
+     <div class="ins-text">Você paga em média <b>${money(cacC)}</b> pra trazer um comprador do Cocktail. <b>${pct(taxa)}</b> deles sobem pro Ápice — e cada Ápice vale <b>${money(ticket)}</b>. Então o custo real pra conquistar um cliente de Ápice é só <b>${asc>0?money(cacA):'—'}</b> (CAC Ápice = investimento ÷ ascensões).</div>
+     <div class="ins-action">→ É por isso que o ROAS pula de <b>${fmtRoas(roasC)}</b> pra <b>${fmtRoas(roasEco)}</b> quando você olha o ecossistema inteiro, não só o Cocktail. <span class="sub">Ascensões contadas: só as ${int(ASC.ascTotal)} participantes rastreáveis como compradoras do Cocktail (as demais entraram por fora); ascensão datada pela compra do Cocktail.</span></div>`;
+}
+
 const FAT_LABELS=['Menos de 5 mil','5–10 mil','10–50 mil','50–100 mil','100–200 mil','Acima de 200 mil'];
 const FAT_COLORS=['#dbe9f6','#b3d1ea','#84b4dd','#5695ce','#2f6fb0','#1a4a86']; // claro→escuro = menor→maior faturamento (neutro, sem juízo)
 
@@ -696,8 +746,8 @@ function init(){
   document.getElementById('qualNote').textContent = 'Qualificado = '+D.qualification;
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
-  const PAGES=['funnel','obj','insights','comercial','tempo','perfil','apice'];
-  const NOCTRL=['insights','tempo','perfil','apice']; // abas de base completa (sem seletor de período); comercial usa o seletor
+  const PAGES=['funnel','obj','insights','comercial','tempo','perfil','apice','ascensao'];
+  const NOCTRL=['insights','tempo','perfil','apice']; // abas de base completa (sem seletor de período); comercial e ascensao usam o seletor
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
     const pg=b.dataset.page;
@@ -719,5 +769,6 @@ function init(){
   else if(hash.includes('tempo')){ document.querySelector('.pagebtn[data-page="tempo"]').click(); }
   else if(hash.includes('perfil')||hash.includes('compradora')){ document.querySelector('.pagebtn[data-page="perfil"]').click(); }
   else if(hash.includes('apice')||hash.includes('ápice')){ document.querySelector('.pagebtn[data-page="apice"]').click(); }
+  else if(hash.includes('ascens')){ document.querySelector('.pagebtn[data-page="ascensao"]').click(); }
 }
 init();

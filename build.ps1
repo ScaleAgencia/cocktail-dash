@@ -10,7 +10,7 @@
 #    objections -> data-obj.js      (objecoes)   cron diario
 #    insights   -> data-insights.js (insights)   cron semanal
 #    all        -> os 3 (uso local/manual)
-param([ValidateSet('all','traffic','objections','insights','estudo','apice')][string]$Mode='all')
+param([ValidateSet('all','traffic','objections','insights','estudo','apice','ascensao')][string]$Mode='all')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $BR = [Globalization.CultureInfo]::GetCultureInfo('pt-BR')
@@ -372,7 +372,7 @@ $estudo=[pscustomobject]@{
 #  ÁPICE — coorte da planilha de participantes × base de leads
 #  (e-mail+nome só p/ casar; publica só agregados/anonimizado)
 # ===================================================================
-if($Mode -eq 'all' -or $Mode -eq 'apice'){
+if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
   function NameKey($s){ return ((Deaccent (Norm $s)) -replace '\s+',' ').Trim() }
   $APICE_ID='1_TiMsH24-mmB-2CcKo5rNMtEQ09gXuJr_RSMv3AUfW4'
   $aCsv=Join-Path $dataDir 'apice.csv'; Get-Sheet $APICE_ID '0' $aCsv
@@ -404,8 +404,25 @@ if($Mode -eq 'all' -or $Mode -eq 'apice'){
     totalApice=$nAp; matched=$nC; matchedEmail=$mEmail; matchedName=$mName; qualified=($coh|Where-Object{$_.fat -in $QUAL_MENSAL}).Count; fatMedia=$apFatMedia
     fatDist=@($apFat); voce=@($apVoce); intent=@($apInt); equipe=@($apEq)
     objec=@($apObj); quotes=@($apQuotes) }
-  WriteJs 'data-apice.js' 'DASH_APICE' $apice
+  if($Mode -eq 'all' -or $Mode -eq 'apice'){ WriteJs 'data-apice.js' 'DASH_APICE' $apice }
   Write-Host ("ÁPICE: {0}/{1} casadas (email={2} nome={3}) qualif={4}" -f $nC,$nAp,$mEmail,$mName,$apice.qualified)
+
+  # --- ASCENSÃO: escada de valor Tráfego → Cocktail → Ápice (ingresso R$150k) ---
+  $APICE_TICKET=150000
+  $kByE=@{}; $kByN=@{}  # compradoras do Cocktail (kiwify paid): email/nome(Cliente) -> data da compra
+  foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
+    $e=(Norm $r[$K_EMAIL]).ToLower(); if($e -ne '' -and -not $kByE.ContainsKey($e)){$kByE[$e]=$d}
+    $nm=NameKey $r[3]; if($nm -match ' ' -and -not $kByN.ContainsKey($nm)){$kByN[$nm]=$d} }
+  $ascDaily=@{}; $ascE=0; $ascN=0
+  foreach($w in $apList){ $d=$null
+    if($kByE.ContainsKey($w.email)){$d=$kByE[$w.email];$ascE++}
+    elseif($w.key -match ' ' -and $kByN.ContainsKey($w.key)){$d=$kByN[$w.key];$ascN++}
+    if($d){ if(-not $ascDaily.ContainsKey($d)){$ascDaily[$d]=0}; $ascDaily[$d]++ } }
+  $ascArr=@($ascDaily.GetEnumerator()|Sort-Object Name|ForEach-Object{[pscustomobject]@{date=$_.Name;asc=$_.Value}})
+  $asc=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; apiceTicket=$APICE_TICKET
+    totalApice=$nAp; ascTotal=($ascE+$ascN); ascByEmail=$ascE; ascByName=$ascN; ascDaily=$ascArr }
+  if($Mode -eq 'all' -or $Mode -eq 'ascensao'){ WriteJs 'data-ascensao.js' 'DASH_ASC' $asc }
+  Write-Host ("ASCENSÃO: {0} rastreadas (email={1} nome={2}) de {3} Ápice" -f ($ascE+$ascN),$ascE,$ascN,$nAp)
 }
 
 # ---- emit (por modo) ----------------------------------------------
