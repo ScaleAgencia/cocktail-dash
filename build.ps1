@@ -10,7 +10,7 @@
 #    objections -> data-obj.js      (objecoes)   cron diario
 #    insights   -> data-insights.js (insights)   cron semanal
 #    all        -> os 3 (uso local/manual)
-param([ValidateSet('all','traffic','objections','insights','estudo')][string]$Mode='all')
+param([ValidateSet('all','traffic','objections','insights','estudo','apice')][string]$Mode='all')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $BR = [Globalization.CultureInfo]::GetCultureInfo('pt-BR')
@@ -366,6 +366,46 @@ $estudo=[pscustomobject]@{
   generatedAt=$nowIso; generatedAtBR=$nowBR; buyersTotal=$paidCount; buyersMatched=$nB; ticket=$ticket; fatMedia=$fatMedia
   tempo=[pscustomobject]@{n=$dpos.Count;mean=$tMean;median=$tMed;within3=$w3;within7=$w7;buckets=@($tempoBk)}
   perfil=[pscustomobject]@{fatDist=@($fatDist);voce=@($voceDist);intent=@($intentDist);equipe=@($eqDist);objec=@($objDist);quotes=@($quotes)}
+}
+
+# ===================================================================
+#  ÁPICE — coorte da planilha de participantes × base de leads
+#  (e-mail+nome só p/ casar; publica só agregados/anonimizado)
+# ===================================================================
+if($Mode -eq 'all' -or $Mode -eq 'apice'){
+  function NameKey($s){ return ((Deaccent (Norm $s)) -replace '\s+',' ').Trim() }
+  $APICE_ID='1_TiMsH24-mmB-2CcKo5rNMtEQ09gXuJr_RSMv3AUfW4'
+  $aCsv=Join-Path $dataDir 'apice.csv'; Get-Sheet $APICE_ID '0' $aCsv
+  $apList=@(); foreach($r in (Read-Csv $aCsv)){ if($r.Count -lt 2){continue}; $em=(Norm $r[1]).ToLower(); if($em -notmatch '@'){continue}; $apList+=[pscustomobject]@{email=$em;key=(NameKey $r[0])} }
+  $apEmail=@{}; $apName=@{}
+  foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); $full=NameKey (($r[0])+' '+($r[1]))
+    if($e -ne '' -and -not $apEmail.ContainsKey($e)){ $apEmail[$e]=$r }
+    if($full -match ' '){ if(-not $apName.ContainsKey($full)){ $apName[$full]=New-Object System.Collections.Generic.List[object] }; $apName[$full].Add($r) } }
+  $coh=@(); $mEmail=0; $mName=0
+  foreach($w in $apList){ $lead=$null
+    if($apEmail.ContainsKey($w.email)){ $lead=$apEmail[$w.email]; $mEmail++ }
+    elseif($w.key -ne '' -and $apName.ContainsKey($w.key) -and $apName[$w.key].Count -eq 1){ $lead=$apName[$w.key][0]; $mName++ }
+    if($lead){ $coh+=[pscustomobject]@{fat=(Norm $lead[$L_FAT]);voce=(Norm $lead[$L_VOCE]);eq=(Norm $lead[$L_EQ]);intent=(Norm $lead[$L_INTENT]);desafio=(Norm $lead[$L_DESAFIO])} } }
+  $nAp=$apList.Count; $nC=$coh.Count
+  function ADist($items,$prop,$order){ $h=@{}; $tot=$items.Count; foreach($b in $items){ $v=CleanOpt $b.$prop; if($v -eq ''){continue}; if(-not $h.ContainsKey($v)){$h[$v]=0}; $h[$v]++ }
+    $keys=@(); if($order){ foreach($o in $order){ if($h.ContainsKey($o)){$keys+=$o} } } else { $keys=@($h.GetEnumerator()|Sort-Object Value -Descending|ForEach-Object{$_.Key}) }
+    $out=@(); foreach($k in $keys){ $pp=0.0; if($tot){$pp=[math]::Round($h[$k]/$tot*100,1)}; $out+=[pscustomobject]@{label=$k;n=$h[$k];pct=$pp} }; return ,$out }
+  $apFatV=@($coh | Where-Object {$FAT_MID.ContainsKey($_.fat)} | ForEach-Object {$FAT_MID[$_.fat]})
+  $apFatMedia=0; if($apFatV.Count){$apFatMedia=[math]::Round(($apFatV|Measure-Object -Average).Average,0)}
+  $apObjB=@{}; foreach($b in $coh){ $bk=Bucket $b.desafio; if(-not $apObjB.ContainsKey($bk)){$apObjB[$bk]=0}; $apObjB[$bk]++ }
+  $apObj=@(); foreach($k in $OBJ_ORDER){ if($apObjB.ContainsKey($k) -and $apObjB[$k] -gt 0){ $pp=0.0; if($nC){$pp=[math]::Round($apObjB[$k]/$nC*100,1)}; $apObj+=[pscustomobject]@{label=$k;n=$apObjB[$k];pct=$pp} } }
+  $aqc=@(); foreach($b in $coh){ $t=Norm $b.desafio; if($t.Length -lt 22 -or $t.Length -gt 180){continue}
+    if($t -match '@' -or $t -match 'http' -or $t -match '\d{4,}'){continue}
+    $cx=($t.ToLower() -replace '\s',''); if(($cx.ToCharArray()|Select-Object -Unique).Count -le 4){continue}; $aqc+=$t }
+  $apQuotes=@($aqc | Select-Object -Unique | Select-Object -First 16)
+  $apFat=ADist $coh 'fat' $FAT_ORDER; $apVoce=ADist $coh 'voce' $null; $apInt=ADist $coh 'intent' $null; $apEq=ADist $coh 'eq' @('1','2-7','8-15','16-50','50+')
+  $apice=[pscustomobject]@{
+    generatedAt=$nowIso; generatedAtBR=$nowBR
+    totalApice=$nAp; matched=$nC; matchedEmail=$mEmail; matchedName=$mName; qualified=($coh|Where-Object{$_.fat -in $QUAL_MENSAL}).Count; fatMedia=$apFatMedia
+    fatDist=@($apFat); voce=@($apVoce); intent=@($apInt); equipe=@($apEq)
+    objec=@($apObj); quotes=@($apQuotes) }
+  WriteJs 'data-apice.js' 'DASH_APICE' $apice
+  Write-Host ("ÁPICE: {0}/{1} casadas (email={2} nome={3}) qualif={4}" -f $nC,$nAp,$mEmail,$mName,$apice.qualified)
 }
 
 # ---- emit (por modo) ----------------------------------------------

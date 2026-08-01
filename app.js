@@ -4,6 +4,7 @@ const D = window.DASH_DATA;
 const OBJ = window.DASH_OBJ || {};
 const INS = window.DASH_INSIGHTS || {};
 const ESTUDO = window.DASH_ESTUDO || {};
+const APICE = window.DASH_APICE || {};
 const TARGET_CPL_QLF = 150;   // meta CPL qualificado (R$)
 const TARGET_CAC     = 1500;  // meta CAC (R$)
 const PRODUCT = 'Evento presencial para mulheres que já faturam acima de R$ 100 mil/mês — empresárias num patamar alto que querem escalar ainda mais, destravar e ir para o próximo nível.';
@@ -645,6 +646,26 @@ function renderPerfil(){
   const qs=arr(P.quotes);
   document.getElementById('pQuotes').innerHTML = qs.length ? `<ul class="quotes">${qs.map(q=>`<li>“${esc(q)}”</li>`).join('')}</ul>` : '';
 }
+function renderApice(){
+  const A=APICE; if(!A.fatDist){ return; }
+  const naoBase=(A.totalApice||0)-(A.matched||0);
+  document.getElementById('apiceIntro').innerHTML =
+    `Cruzamento da planilha de participantes Ápice (${int(A.totalApice)} mulheres) com a base de leads — por e-mail e confirmado pelo nome. Só agregados e depoimentos anonimizados.`;
+  document.getElementById('apiceStats').innerHTML =
+    statCard(int(A.totalApice),'Mulheres no Ápice') +
+    statCard(int(A.matched),'Encontradas na base de leads', `${int(A.matchedEmail)} por e-mail · ${int(A.matchedName)} por nome`) +
+    statCard(int(A.qualified),'Qualificadas (≥100k)') +
+    statCard(`R$ ${(A.fatMedia||0).toLocaleString('pt-BR')}`,'Faturamento médio /mês (estimado)');
+  document.getElementById('apiceNote').innerHTML =
+    `<div class="ins-text">📌 <b>${int(A.matched)} de ${int(A.totalApice)}</b> participantes foram encontradas na base de leads (o perfil abaixo é sobre essas). As outras <b>${int(naoBase)}</b> não estão na base com o mesmo e-mail/nome — provavelmente entraram por outro caminho (indicação, convite direto, VIP).</div>`;
+  document.getElementById('aFat').innerHTML = bars(A.fatDist,'var(--green)');
+  document.getElementById('aVoce').innerHTML = bars(A.voce,'var(--blue2)');
+  document.getElementById('aIntent').innerHTML = bars(A.intent,'var(--navy)');
+  document.getElementById('aEquipe').innerHTML = bars(A.equipe,'var(--blue)');
+  document.getElementById('aObjec').innerHTML = bars(arr(A.objec).map(x=>({label:objLabel(x.label),n:x.n,pct:x.pct})),'var(--yellow)');
+  const qs=arr(A.quotes);
+  document.getElementById('aQuotes').innerHTML = qs.length ? `<ul class="quotes">${qs.map(q=>`<li>“${esc(q)}”</li>`).join('')}</ul>` : '';
+}
 
 // ===================== presets & init =====================
 function setRange(s,e){ state.start=s<DMIN?DMIN:s; state.end=e>DMAX?DMAX:e; render(); }
@@ -675,8 +696,8 @@ function init(){
   document.getElementById('qualNote').textContent = 'Qualificado = '+D.qualification;
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
-  const PAGES=['funnel','obj','insights','comercial','tempo','perfil'];
-  const NOCTRL=['insights','tempo','perfil']; // abas de base completa (sem seletor de período); comercial usa o seletor
+  const PAGES=['funnel','obj','insights','comercial','tempo','perfil','apice'];
+  const NOCTRL=['insights','tempo','perfil','apice']; // abas de base completa (sem seletor de período); comercial usa o seletor
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
     const pg=b.dataset.page;
@@ -691,11 +712,12 @@ function init(){
   document.getElementById('goalInput').onchange=e=>{ localStorage.setItem('ccn_goal',e.target.value||15000); render(); };
   const [s,e]=lastN(30); setRange(s,e);
   renderInsights();
-  renderTempo(); renderPerfil();
+  renderTempo(); renderPerfil(); renderApice();
   const hash=location.hash.toLowerCase();
   if(hash.includes('insight')){ document.querySelector('.pagebtn[data-page="insights"]').click(); }
   else if(hash.includes('obj')){ document.querySelector('.pagebtn[data-page="obj"]').click(); }
   else if(hash.includes('tempo')){ document.querySelector('.pagebtn[data-page="tempo"]').click(); }
   else if(hash.includes('perfil')||hash.includes('compradora')){ document.querySelector('.pagebtn[data-page="perfil"]').click(); }
+  else if(hash.includes('apice')||hash.includes('ápice')){ document.querySelector('.pagebtn[data-page="apice"]').click(); }
 }
 init();

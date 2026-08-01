@@ -28,6 +28,7 @@
     <button class="pagebtn" data-page="comercial">🏆 Comercial</button>
     <button class="pagebtn" data-page="tempo">⏱️ Tempo de compra</button>
     <button class="pagebtn" data-page="perfil">👤 Compradoras</button>
+    <button class="pagebtn" data-page="apice">👑 Ápice</button>
   </nav>
 
   <section class="controls">
@@ -214,6 +215,26 @@
     </div>
   </div>
 
+  <div id="pageApice" hidden>
+    <div class="card ins-head">
+      <div class="chart-title">👑 Ápice — perfil da coorte</div>
+      <div class="micro-note" id="apiceIntro">—</div>
+    </div>
+    <div class="stat-row" id="apiceStats"></div>
+    <div class="card note-card" id="apiceNote"></div>
+    <div class="perfil-grid">
+      <div class="card"><div class="chart-title">Faturamento mensal</div><div id="aFat" class="objlist"></div></div>
+      <div class="card"><div class="chart-title">Perfil profissional</div><div id="aVoce" class="objlist"></div></div>
+      <div class="card"><div class="chart-title">Intenção de pagamento</div><div id="aIntent" class="objlist"></div></div>
+      <div class="card"><div class="chart-title">Tamanho da equipe</div><div id="aEquipe" class="objlist"></div></div>
+    </div>
+    <div class="card"><div class="chart-title">O que elas relatam como principal desafio</div>
+      <div class="micro-note">Objeções da coorte (categoria) + depoimentos reais anonimizados (sem nome/e-mail/telefone).</div>
+      <div id="aObjec" class="objlist"></div>
+      <div id="aQuotes" class="voices" style="margin-top:12px"></div>
+    </div>
+  </div>
+
   <footer class="foot">
     Dados cruzados de: planilha de Queries (Meta) · aba "leads para tráfego" · aba "clientes kiwify compra". Somente leitura — nada é alterado nas planilhas.
   </footer>
@@ -221,7 +242,7 @@
 <script>
   // carrega os dados + app sempre frescos (cache-bust por timestamp) — F5 normal ja mostra o ultimo
   (function(){ var v = Date.now();
-    ['data.js','data-obj.js','data-insights.js','data-estudo.js','app.js'].forEach(function(f){
+    ['data.js','data-obj.js','data-insights.js','data-estudo.js','data-apice.js','app.js'].forEach(function(f){
       document.write('<script src="' + f + '?t=' + v + '"><\/script>');
     });
   })();
