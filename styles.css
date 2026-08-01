@@ -121,6 +121,9 @@ tbody tr:hover{background:#f7fafd}
 .asc-splitlbl .sw{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px;vertical-align:middle}
 .asc-splitlbl .sw.cock{background:#1f8f7a}
 .asc-splitlbl .sw.apic{background:#c99a24}
+.asc-method{margin-top:14px;padding:12px 14px;background:rgba(23,105,180,.05);border-radius:10px;font-size:12.5px;line-height:1.55;color:#41505e}
+.asc-method>div{margin-top:6px}
+.asc-method b{color:var(--ink)}
 .ladder{display:flex;align-items:flex-end;justify-content:center;gap:0;flex-wrap:nowrap;margin-top:18px;overflow-x:auto;padding-bottom:6px}
 .stepwrap{flex:1 1 0;min-width:150px;display:flex;align-items:flex-end;justify-content:center}
 .step{width:100%;border-radius:14px 14px 10px 10px;padding:16px 14px;color:#fff;box-shadow:var(--shadow);display:flex;flex-direction:column;justify-content:flex-end;gap:2px}

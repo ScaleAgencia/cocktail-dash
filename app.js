@@ -618,11 +618,18 @@ function renderAscensao(){
        <div class="step-v">${x.v}</div><div class="step-s">${x.s}</div></div></div>` +
     (i<2?`<div class="step-conn">${i===0?`1 venda a cada<br><b>${money(cacC)}</b>`:`<b>${pct(taxa)}</b><br>sobem ↑`}</div>`:'')
   ).join('');
-  // nota
+  // nota + metodologia honesta
+  const notInB=(ASC.totalApice||0)-(ASC.ascTotal||0);
   document.getElementById('ascNote').innerHTML =
     `<div class="chart-title">💡 O que isso quer dizer</div>
-     <div class="ins-text">Você paga em média <b>${money(cacC)}</b> pra trazer um comprador do Cocktail. <b>${pct(taxa)}</b> deles sobem pro Ápice — e cada Ápice vale <b>${money(ticket)}</b>. Então o custo real pra conquistar um cliente de Ápice é só <b>${asc>0?money(cacA):'—'}</b> (CAC Ápice = investimento ÷ ascensões).</div>
-     <div class="ins-action">→ É por isso que o ROAS pula de <b>${fmtRoas(roasC)}</b> pra <b>${fmtRoas(roasEco)}</b> quando você olha o ecossistema inteiro, não só o Cocktail. <span class="sub">Ascensões contadas: só as ${int(ASC.ascTotal)} participantes rastreáveis como compradoras do Cocktail (as demais entraram por fora); ascensão datada pela compra do Cocktail.</span></div>`;
+     <div class="ins-text">Você paga em média <b>${money(cacC)}</b> pra trazer um comprador do Cocktail. <b>${pct(taxa)}</b> deles sobem pro Ápice — e cada Ápice vale <b>${money(ticket)}</b>. Então o custo real pra conquistar um cliente de Ápice é só <b>${asc>0?money(cacA):'—'}</b>.</div>
+     <div class="ins-action">→ É por isso que o ROAS pula de <b>${fmtRoas(roasC)}</b> pra <b>${fmtRoas(roasEco)}</b> quando você olha o ecossistema inteiro, não só o Cocktail.</div>
+     <div class="asc-method">
+       <b>Como é calculado — leia com atenção:</b>
+       <div>• <b>Gasto</b> = todo o tráfego Meta (com imposto). <b>Vendas e receita do Cocktail</b> = <b>TODAS</b> as vendas do período (tráfego <u>+ orgânico</u>) — é um ROAS <i>blended</i> (receita total ÷ gasto total), não só o que veio de anúncio.</div>
+       <div>• <b>Ascensões</b> = só as <b>${int(ASC.ascTotal)} de ${int(ASC.totalApice)}</b> participantes do Ápice que dá pra <b>rastrear</b> como compradoras do Cocktail na Kiwify (por e-mail/nome), datadas pela compra do Cocktail. As outras <b>${int(notInB)}</b> entraram por fora (indicação/VIP) e não dá pra atribuir ao tráfego.</div>
+       <div>• Logo, é um <b>piso conservador</b>: se as ${int(ASC.totalApice)} fossem contadas, a receita do Ápice seria <b>${money((ASC.totalApice||0)*ticket)}</b> (acumulado) e o ROAS real seria ainda maior. 👉 o número aqui <b>subestima</b>, não superestima.</div>
+     </div>`;
 }
 
 const FAT_LABELS=['Menos de 5 mil','5–10 mil','10–50 mil','50–100 mil','100–200 mil','Acima de 200 mil'];
