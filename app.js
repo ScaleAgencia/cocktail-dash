@@ -605,6 +605,16 @@ function renderAscensao(){
     statCard(cSales>0?pct(taxa):'—','Taxa de ascensão','viram Ápice') +
     statCard(asc>0?money(cacA):'—','CAC Ápice','tráfego por ascensão') +
     statCard(spend>0?fmtRoas(roasEco):'—','ROAS ecossistema','com Ápice');
+  // Ápice completo (referência: todas as participantes, acumulado — não filtra por data)
+  const totAp=ASC.totalApice||0, fatAp=totAp*ticket;
+  document.getElementById('ascFull').innerHTML =
+    `<div class="asc-full-tag">👑 Ápice completo — todas as participantes <span class="sub">(acumulado · não filtra por data)</span></div>
+     <div class="asc-full-nums">
+       <div class="asc-full-item"><div class="asc-full-v">${int(totAp)}</div><div class="asc-full-l">participantes no Ápice</div></div>
+       <div class="asc-full-sep"></div>
+       <div class="asc-full-item"><div class="asc-full-v">${money(fatAp)}</div><div class="asc-full-l">faturamento total (× ${money(ticket)})</div></div>
+     </div>
+     <div class="sub asc-full-note">Total real do Ápice — só ${int(ASC.ascTotal)} são rastreáveis ao tráfego (usadas no cálculo acima); as outras ${int(totAp-(ASC.ascTotal||0))} entraram por fora.</div>`;
   // escada (3 degraus)
   const stepH=[70,120,180]; // alturas crescentes
   const steps=[

@@ -124,6 +124,15 @@ tbody tr:hover{background:#f7fafd}
 .asc-method{margin-top:14px;padding:12px 14px;background:rgba(23,105,180,.05);border-radius:10px;font-size:12.5px;line-height:1.55;color:#41505e}
 .asc-method>div{margin-top:6px}
 .asc-method b{color:var(--ink)}
+/* Ápice completo (referência acumulada) */
+.asc-full{border-left:4px solid #c99a24;background:linear-gradient(180deg,#fdfaf1,#fffef9)}
+.asc-full-tag{font-size:12.5px;font-weight:800;color:#8a6d13;letter-spacing:.02em}
+.asc-full-tag .sub{font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0}
+.asc-full-nums{display:flex;align-items:center;gap:26px;margin-top:12px;flex-wrap:wrap}
+.asc-full-sep{width:1px;align-self:stretch;background:rgba(201,154,36,.3)}
+.asc-full-v{font-size:clamp(26px,3.4vw,34px);font-weight:800;color:#a97e16;line-height:1;letter-spacing:-.5px}
+.asc-full-l{font-size:12px;color:#7a6a45;margin-top:5px;font-weight:600}
+.asc-full-note{margin-top:12px}
 .ladder{display:flex;align-items:flex-end;justify-content:center;gap:0;flex-wrap:nowrap;margin-top:18px;overflow-x:auto;padding-bottom:6px}
 .stepwrap{flex:1 1 0;min-width:150px;display:flex;align-items:flex-end;justify-content:center}
 .step{width:100%;border-radius:14px 14px 10px 10px;padding:16px 14px;color:#fff;box-shadow:var(--shadow);display:flex;flex-direction:column;justify-content:flex-end;gap:2px}
