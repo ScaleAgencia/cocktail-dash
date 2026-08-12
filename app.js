@@ -165,7 +165,7 @@ function treeRow(node,level,hasKids){
   const m=node.m, cplqlf=safe(m.spend,m.qlf), cac=safe(m.spend,m.sales), ctr=safe(m.clicks,m.impr)*100, txq=safe(m.qlf,m.leads)*100;
   const car = hasKids ? `<span class="caret">${expanded.has(node.key)?'▾':'▸'}</span>` : '<span class="caret0"></span>';
   return `<tr class="trow lvl${level}" data-key="${esc(node.key)}" data-k="${hasKids?1:0}">
-    <td class="tlabel" style="padding-left:${8+level*22}px">${car}${esc(node.label)}</td>
+    <td class="tlabel" style="padding-left:${8+level*22}px" title="${esc(node.label)}">${car}${esc(node.label)}</td>
     <td>${money(m.spend)}</td><td>${int(m.leads)}</td><td>${int(m.qlf)}</td><td>${pct(txq)}</td>
     <td>${cplPill(cplqlf,m.qlf)}</td><td>${int(m.sales)}</td><td>${m.sales>0?money(cac):'—'}</td><td>${pct(ctr)}</td></tr>`;
 }
@@ -200,7 +200,7 @@ function renderSales(){
   const head=['Campanha','Vendas','Receita','Ticket médio','CAC'];
   document.querySelector('#salesTable thead').innerHTML='<tr>'+head.map((h,i)=>`<th class="${i===0?'':''}">${h}</th>`).join('')+'</tr>';
   document.querySelector('#salesTable tbody').innerHTML=rows.map(r=>`<tr>
-    <td>${r.label}</td><td>${int(r.sales)}</td><td>${money(r.revenue)}</td>
+    <td title="${esc(r.label)}">${r.label}</td><td>${int(r.sales)}</td><td>${money(r.revenue)}</td>
     <td>${money(safe(r.revenue,r.sales))}</td><td>${r.spend>0?money(safe(r.spend,r.sales)):'—'}</td></tr>`).join('');
   document.getElementById('attrNote').textContent =
     `${attributed} de ${cur.sales} vendas no período atribuídas a uma campanha (cruzando e-mail do comprador com a base de leads). No total da base: ${D.buyersMatched}/${D.buyersTotal} compradores casados.`;
