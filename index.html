@@ -24,6 +24,7 @@
 
   <nav class="pagenav">
     <button class="pagebtn active" data-page="funnel">📊 Funil</button>
+    <button class="pagebtn" data-page="datas">📅 Datas</button>
     <button class="pagebtn" data-page="obj">🧠 Objeções</button>
     <button class="pagebtn" data-page="insights">💡 Insights</button>
     <button class="pagebtn" data-page="comercial">🏆 Comercial</button>
@@ -66,6 +67,7 @@
     </div>
   </section>
   <div class="rev-foot" id="revFoot"></div>
+  <div class="rev-meta" id="revMeta"></div>
 
   <section class="grid">
     <!-- Investment + funnel -->
@@ -253,6 +255,23 @@
     <div class="card note-card" id="ascNote"></div>
   </div>
 
+  <div id="pageDatas" hidden>
+    <div class="card ins-head">
+      <div class="chart-title">📅 Datas — preenchimento de cada Cocktail</div>
+      <div class="micro-note" id="datasIntro">—</div>
+    </div>
+    <div class="stat-row" id="datasStats"></div>
+    <div class="card">
+      <div class="chart-title">🎯 Próximos eventos — a preencher</div>
+      <div class="micro-note">Cada Cocktail precisa de <b>30 vagas</b>. &ldquo;Investido&rdquo; é uma estimativa (CAC médio × vendas do evento).</div>
+      <div class="ev-grid" id="datasUpcoming"></div>
+    </div>
+    <div class="card">
+      <div class="chart-title">✓ Eventos encerrados</div>
+      <div class="ev-grid" id="datasPast"></div>
+    </div>
+  </div>
+
   <footer class="foot">
     Dados cruzados de: planilha de Queries (Meta) · aba "leads para tráfego" · aba "clientes kiwify compra". Somente leitura — nada é alterado nas planilhas.
   </footer>
@@ -260,7 +279,7 @@
 <script>
   // carrega os dados + app sempre frescos (cache-bust por timestamp) — F5 normal ja mostra o ultimo
   (function(){ var v = Date.now();
-    ['data.js','data-obj.js','data-insights.js','data-estudo.js','data-apice.js','data-ascensao.js','app.js'].forEach(function(f){
+    ['data.js','data-obj.js','data-insights.js','data-estudo.js','data-apice.js','data-ascensao.js','data-datas.js','app.js'].forEach(function(f){
       document.write('<script src="' + f + '?t=' + v + '"><\/script>');
     });
   })();

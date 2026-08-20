@@ -10,7 +10,7 @@
 #    objections -> data-obj.js      (objecoes)   cron diario
 #    insights   -> data-insights.js (insights)   cron semanal
 #    all        -> os 3 (uso local/manual)
-param([ValidateSet('all','traffic','objections','insights','estudo','apice','ascensao')][string]$Mode='all')
+param([ValidateSet('all','traffic','objections','insights','estudo','apice','ascensao','datas')][string]$Mode='all')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $BR = [Globalization.CultureInfo]::GetCultureInfo('pt-BR')
@@ -429,6 +429,26 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
     totalApice=$nAp; ascTotal=($ascE+$ascN); ascByEmail=$ascE; ascByName=$ascN; ascDaily=$ascArr }
   if($Mode -eq 'all' -or $Mode -eq 'ascensao'){ WriteJs 'data-ascensao.js' 'DASH_ASC' $asc }
   Write-Host ("ASCENSÃO: {0} rastreadas (email={1} nome={2}) de {3} Ápice" -f ($ascE+$ascN),$ascE,$ascN,$nAp)
+}
+
+# ===================================================================
+#  DATAS — preenchimento de cada Cocktail por data (coluna "Oferta")
+#  cada evento = 30 vagas. Agrupa vendas paid por data do evento.
+# ===================================================================
+if($Mode -eq 'all' -or $Mode -eq 'datas'){
+  $K_OFERTA=HdrIndex $kh 'Oferta'
+  $evMap=@{}
+  foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $of=Norm $r[$K_OFERTA]; if($of -eq ''){continue}
+    $ev=$of; $ix=$ev.IndexOf(' - '); if($ix -ge 0){ $ev=$ev.Substring(0,$ix).Trim() }   # "Evento 07/04 - Convite especial" -> "Evento 07/04"
+    if(-not $evMap.ContainsKey($ev)){ $evMap[$ev]=[pscustomobject]@{ev=$ev;vendas=0;revenue=0.0} }
+    $o=$evMap[$ev]; $o.vendas++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
+  $evArr=@()
+  foreach($e in $evMap.Values){ $dk='9999-99-99'; if($e.ev -match '(\d{2})/(\d{2})'){ $dk="2026-$($Matches[2])-$($Matches[1])" }
+    $evArr+=[pscustomobject]@{ev=$e.ev;dateKey=$dk;vendas=$e.vendas;revenue=[math]::Round($e.revenue,2)} }
+  $evArr=@($evArr | Sort-Object dateKey)
+  $datas=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; meta=30; today=$dmax; events=$evArr }
+  WriteJs 'data-datas.js' 'DASH_DATAS' $datas
+  Write-Host ("DATAS: {0} eventos" -f $evArr.Count)
 }
 
 # ---- emit (por modo) ----------------------------------------------

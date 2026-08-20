@@ -6,6 +6,7 @@ const INS = window.DASH_INSIGHTS || {};
 const ESTUDO = window.DASH_ESTUDO || {};
 const APICE = window.DASH_APICE || {};
 const ASC = window.DASH_ASC || {};
+const DATAS = window.DASH_DATAS || {};
 const TARGET_CPL_QLF = 150;   // meta CPL qualificado (R$)
 const TARGET_CAC     = 1500;  // meta CAC (R$)
 const PRODUCT = 'Evento presencial para mulheres que já faturam acima de R$ 100 mil/mês — empresárias num patamar alto que querem escalar ainda mais, destravar e ir para o próximo nível.';
@@ -103,6 +104,21 @@ function renderReceita(cur,prev){
   document.getElementById('revFoot').innerHTML =
     `<div class="rev-bar"><div class="rev-bar-inv" style="width:${inPct.toFixed(1)}%"></div></div>
      <div class="rev-bar-lbl">Cada <b>R$ 1,00</b> investido virou <b style="color:${col}">${money(c.roas)}</b> de receita <span class="sub">· ${money(c.spend)} → ${money(c.revenue)} no período · variações vs. período anterior</span></div>`;
+  // ---- META: investir 100k → voltar 328k (ROAS 3,28x) — period-aware ----
+  const METAR=3.28;
+  const metaRev=c.spend*METAR, hit=c.revenue>=metaRev, gap=metaRev-c.revenue;
+  const prog=metaRev>0?Math.min(c.revenue/metaRev*100,100):0;
+  const mc=hit?'var(--green)':'var(--red)';
+  document.getElementById('revMeta').className='rev-meta '+(hit?'ok':'below');
+  document.getElementById('revMeta').innerHTML =
+    `<div class="rev-meta-head">
+       <span class="rev-meta-tag">🎯 Meta — cada <b>R$ 100 mil</b> investido deve voltar <b>R$ 328 mil</b> <span class="sub">(ROAS 3,28x)</span></span>
+       <span class="rev-meta-badge" style="background:${hit?'#e7f6ec':'#fdeeec'};color:${mc}">${hit?'✅ Dentro da meta':'⚠️ Abaixo da meta'}</span>
+     </div>
+     <div class="rev-meta-bar"><div class="rev-meta-fill" style="width:${prog.toFixed(1)}%;background:${mc}"></div><span class="rev-meta-goal">meta ${money(metaRev)}</span></div>
+     <div class="rev-meta-lbl">Você está em <b style="color:${col}">${fmtRoas(c.roas)}</b> ${hit
+        ? `— <b style="color:var(--green)">${money(c.revenue-metaRev)}</b> acima da meta de receita. 🎉`
+        : `— faltam <b style="color:var(--red)">${money(gap)}</b> de receita pra bater a meta (ou baixar o gasto).`}</div>`;
 }
 
 // ---- funnel ----
@@ -743,6 +759,41 @@ function renderApice(){
   document.getElementById('aQuotes').innerHTML = qs.length ? `<ul class="quotes">${qs.map(q=>`<li>“${esc(q)}”</li>`).join('')}</ul>` : '';
 }
 
+// ===================== datas (preenchimento de cada Cocktail) =====================
+function evCard(e,meta,cac,today){
+  const pctF=e.vendas/meta*100, falta=Math.max(0,meta-e.vendas);
+  const full=e.vendas>=meta, past=(today && e.dateKey && e.dateKey<today);
+  const col=full?'var(--green)':(pctF>=66?'#e0913a':'var(--blue2)');
+  let badge,bcol;
+  if(full){ badge='✅ Lotado'; bcol='var(--green)'; }
+  else if(past){ badge=`Encerrado · ${int(e.vendas)}/${meta}`; bcol='var(--muted)'; }
+  else { badge=`faltam ${int(falta)}`; bcol='#d9822b'; }
+  return `<div class="ev-card${full?' ev-full':''}">
+    <div class="ev-top"><span class="ev-name">${esc(e.ev)}</span><span class="ev-badge" style="color:${bcol};border-color:${bcol}">${badge}</span></div>
+    <div class="ev-count"><b>${int(e.vendas)}</b><span> / ${meta} vagas</span></div>
+    <div class="ev-prog"><div class="ev-fill" style="width:${Math.min(pctF,100).toFixed(1)}%;background:${col}"></div></div>
+    <div class="ev-foot"><span>Investido ~${money(e.vendas*cac)}</span><span>${money(e.revenue)}</span></div>
+  </div>`;
+}
+function renderDatas(){
+  const evs=arr(DATAS.events); if(!evs.length){ return; }
+  const meta=DATAS.meta||30, today=DATAS.today||'';
+  let spendAll=0,salesAll=0; for(const r of arr(D.daily)){ spendAll+=r.spend; salesAll+=r.sales; }
+  const cac=salesAll>0?spendAll/salesAll:0;
+  const totVagas=evs.length*meta, totVendas=evs.reduce((s,e)=>s+e.vendas,0), lot=evs.filter(e=>e.vendas>=meta).length;
+  document.getElementById('datasIntro').innerHTML =
+    `Vendas do Cocktail agrupadas pela data do evento (coluna &ldquo;Oferta&rdquo; da planilha). Cada evento precisa de <b>${meta} vagas</b> preenchidas. Atualiza a cada 3h.`;
+  document.getElementById('datasStats').innerHTML =
+    statCard(int(evs.length),'Eventos (datas)') +
+    statCard(`${int(totVendas)}<span class="statc-u"> / ${int(totVagas)}</span>`,'Vagas preenchidas', pct(totVagas?totVendas/totVagas*100:0)+' do total') +
+    statCard(int(lot),`Eventos lotados (${meta}/${meta})`) +
+    statCard(money(cac),'Investimento médio por venda');
+  const up=evs.filter(e=>!(today && e.dateKey && e.dateKey<today)).slice().sort((a,b)=>a.dateKey<b.dateKey?-1:1);
+  const past=evs.filter(e=> today && e.dateKey && e.dateKey<today).slice().sort((a,b)=>a.dateKey>b.dateKey?-1:1);
+  document.getElementById('datasUpcoming').innerHTML = up.length? up.map(e=>evCard(e,meta,cac,today)).join('') : '<div class="sub">Nenhum evento futuro no momento.</div>';
+  document.getElementById('datasPast').innerHTML = past.length? past.map(e=>evCard(e,meta,cac,today)).join('') : '<div class="sub">Nenhum evento encerrado.</div>';
+}
+
 // ===================== presets & init =====================
 function setRange(s,e){ state.start=s<DMIN?DMIN:s; state.end=e>DMAX?DMAX:e; render(); }
 function lastN(n){ const e=DMAX; const s=fmtD(addDays(parseD(DMAX),-(n-1))); return [s,e]; }
@@ -772,8 +823,8 @@ function init(){
   document.getElementById('qualNote').textContent = 'Qualificado = '+D.qualification;
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
-  const PAGES=['funnel','obj','insights','comercial','tempo','perfil','apice','ascensao'];
-  const NOCTRL=['insights','tempo','perfil','apice']; // abas de base completa (sem seletor de período); comercial e ascensao usam o seletor
+  const PAGES=['funnel','datas','obj','insights','comercial','tempo','perfil','apice','ascensao'];
+  const NOCTRL=['insights','tempo','perfil','apice','datas']; // abas de base completa (sem seletor de período); comercial e ascensao usam o seletor
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
     const pg=b.dataset.page;
@@ -788,7 +839,7 @@ function init(){
   document.getElementById('goalInput').onchange=e=>{ localStorage.setItem('ccn_goal',e.target.value||15000); render(); };
   const [s,e]=lastN(30); setRange(s,e);
   renderInsights();
-  renderTempo(); renderPerfil(); renderApice();
+  renderTempo(); renderPerfil(); renderApice(); renderDatas();
   const hash=location.hash.toLowerCase();
   if(hash.includes('insight')){ document.querySelector('.pagebtn[data-page="insights"]').click(); }
   else if(hash.includes('obj')){ document.querySelector('.pagebtn[data-page="obj"]').click(); }
@@ -796,5 +847,6 @@ function init(){
   else if(hash.includes('perfil')||hash.includes('compradora')){ document.querySelector('.pagebtn[data-page="perfil"]').click(); }
   else if(hash.includes('apice')||hash.includes('ápice')){ document.querySelector('.pagebtn[data-page="apice"]').click(); }
   else if(hash.includes('ascens')){ document.querySelector('.pagebtn[data-page="ascensao"]').click(); }
+  else if(hash.includes('datas')){ document.querySelector('.pagebtn[data-page="datas"]').click(); }
 }
 init();
