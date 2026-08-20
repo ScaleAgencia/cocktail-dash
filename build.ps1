@@ -129,6 +129,12 @@ function BrDate($s){ $s=Norm $s; if($s -match '^(\d{2})/(\d{2})/(\d{4})'){ retur
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $o=GetDay $d; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
 
+# AJUSTE MANUAL — vendas reais que NAO entraram na planilha kiwify (fantasma). Receita = ticket medio.
+# ⚠️ se um dia essas vendas entrarem na planilha, ZERAR aqui p/ nao duplicar.
+$SALES_ADJ=@{ '2026-08-12'=2 }
+$_tS=0;$_tR=0.0; foreach($o in $daily.Values){ $_tS+=$o.sales; $_tR+=$o.revenue }; $_avgTk=0.0; if($_tS -gt 0){$_avgTk=$_tR/$_tS}
+foreach($ad in $SALES_ADJ.Keys){ $o=GetDay $ad; $o.sales += $SALES_ADJ[$ad]; $o.revenue += $SALES_ADJ[$ad]*$_avgTk }
+
 # vendas por dia × vendedora (coluna "Tracking src") — aba Comercial (period-aware)
 # normaliza caixa do nome (fonte mistura "Michele"/"michele" -> nao dividir a vendedora)
 function TitleName($s){ $s=Norm $s; if($s -eq ''){return ''}
