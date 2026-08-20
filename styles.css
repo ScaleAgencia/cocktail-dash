@@ -162,9 +162,6 @@ tbody tr:hover{background:#f7fafd}
 .ev-kv-r{align-items:flex-end;text-align:right}
 .ev-k{font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#93a1af;font-weight:600}
 .ev-v{font-size:13px;font-weight:800;color:#3a4a5a}
-.ev-roas{display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)}
-.ev-roas-k{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#93a1af;font-weight:700}
-.ev-roas-v{font-size:15px;font-weight:800;letter-spacing:-.01em}
 /* bloco de receita (Investimento · Receita · ROAS) — topo da aba Funil */
 .rev-block{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:stretch;margin:16px 0 0;background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
 .rev-card{padding:16px 22px;display:flex;flex-direction:column;justify-content:center;gap:5px}
