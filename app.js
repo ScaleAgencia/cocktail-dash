@@ -768,11 +768,14 @@ function evCard(e,meta,cac,today){
   if(full){ badge='✅ Lotado'; bcol='var(--green)'; }
   else if(past){ badge=`Encerrado · ${int(e.vendas)}/${meta}`; bcol='var(--muted)'; }
   else { badge=`faltam ${int(falta)}`; bcol='#d9822b'; }
+  const inv=e.vendas*cac, roas=inv>0?e.revenue/inv:0;
+  const rcol=roas>=3.28?'var(--green)':(roas>=1?'#d9822b':'var(--red)');
   return `<div class="ev-card${full?' ev-full':''}">
     <div class="ev-top"><span class="ev-name">${esc(e.ev)}</span><span class="ev-badge" style="color:${bcol};border-color:${bcol}">${badge}</span></div>
     <div class="ev-count"><b>${int(e.vendas)}</b><span> / ${meta} vagas</span></div>
     <div class="ev-prog"><div class="ev-fill" style="width:${Math.min(pctF,100).toFixed(1)}%;background:${col}"></div></div>
-    <div class="ev-foot"><span>Investido ~${money(e.vendas*cac)}</span><span>${money(e.revenue)}</span></div>
+    <div class="ev-foot"><div class="ev-kv"><span class="ev-k">Investido em tráfego</span><span class="ev-v">~${money(inv)}</span></div><div class="ev-kv ev-kv-r"><span class="ev-k">Faturou em Cocktail</span><span class="ev-v" style="color:var(--green)">${money(e.revenue)}</span></div></div>
+    <div class="ev-roas" title="Faturamento em Cocktail ÷ investido em tráfego"><span class="ev-roas-k">ROAS</span><span class="ev-roas-v" style="color:${rcol}">${fmtRoas(roas)}</span></div>
   </div>`;
 }
 function renderDatas(){
