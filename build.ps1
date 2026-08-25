@@ -27,7 +27,10 @@ $MASTER_ID  = '1WuETdVje43yvMfyQDHO1PObXj_G9G-t6JjG6q987Z4o'
 $LEADS_GID  = '603619749'
 $KIWIFY_GID = '1987730935'
 $TAX = 1.1385
-$QUAL_MENSAL = @('Entre R$ 100 mil e R$ 200 mil','Acima de 200 mil')
+# QUALIFICACAO (regra nova ago/2026 do cliente): DESqualificado = fatura < 100 mil (col H "faturamento mensal")
+# OU e CLT (col F "Voce e..."). TUDO ALEM disso e qualificado (default = qualificado, robusto a novas
+# opcoes de resposta >=100k que a planilha venha a criar). LOW_FAT = todas as faixas < 100 mil, grafias antiga+nova.
+$LOW_FAT = @('Menos de R$ 5 mil','Entre R$ 5 mil e R$ 10 mil','Entre R$ 10 mil e R$ 50 mil','Entre R$ 50 mil e R$ 100 mil','Menos de 100mil')
 
 function Get-Sheet($id,$gid,$out){
   $url = "https://docs.google.com/spreadsheets/d/$id/gviz/tq?tqx=out:csv&gid=$gid"
@@ -44,6 +47,8 @@ function Read-Csv($path){
   $p.Close(); return $rows
 }
 function Norm($s){ if($null -eq $s){return ''}; return ($s -replace [char]0x200b,'').Trim() }
+# qualificado = tem faturamento informado, NAO e CLT, e faturamento NAO esta nas faixas <100k
+function IsQual($fat,$voce){ $f=Norm $fat; $v=Norm $voce; if($f -eq ''){return $false}; if($v -eq 'CLT'){return $false}; if($script:LOW_FAT -contains $f){return $false}; return $true }
 function MoneyBR($s){ $s=Norm $s; if($s -eq ''){return 0.0}; return [double]($s -replace '\.','' -replace ',','.') }
 # Kiwify revenue column is mixed: some rows "6201.66" (reais w/ decimal), some "620166" (integer cents)
 function MoneyKiwify($s){ $s=Norm $s; if($s -eq ''){return 0.0}
@@ -120,7 +125,7 @@ foreach($r in $qd){ $d=Norm $r[$Q_DAY]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){c
 $objLeads=@{}
 function GetObjL($d,$b){ $key="$d`u$b"; if(-not $objLeads.ContainsKey($key)){ $objLeads[$key]=[pscustomobject]@{date=$d;bucket=$b;total=0;qlf=0} }; return $objLeads[$key] }
 foreach($r in $ld){ $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){continue}
-  $isq = (Norm $r[$L_FAT]) -in $QUAL_MENSAL
+  $isq = IsQual $r[$L_FAT] $r[$L_VOCE]
   $o=GetDay $d; $o.leads++; if($isq){ $o.qlf++ }
   $ob=GetObjL $d (Bucket $r[$L_DESAFIO]); $ob.total++; if($isq){ $ob.qlf++ } }
 
@@ -180,7 +185,7 @@ foreach($r in $ld){ $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){
   $c=CleanUtm $r[$L_CAMP]; if($c -eq ''){$c='SEM_UTM'}
   $s=CleanUtm $r[$L_SET];  if($s -eq ''){$s='SEM_UTM'}
   $a=AdCode (CleanUtm $r[$L_CONT]); if($a -eq ''){$a='SEM_UTM'}
-  $o=GetGrain $d $c $s $a; $o.leads++; if((Norm $r[$L_FAT]) -in $QUAL_MENSAL){ $o.qlf++ } }
+  $o=GetGrain $d $c $s $a; $o.leads++; if(IsQual $r[$L_FAT] $r[$L_VOCE]){ $o.qlf++ } }
 
 # buyer objections per purchase day (only matched buyers have a known desafio)
 $objBuyers=@{}
@@ -198,7 +203,7 @@ foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K
 # ===================================================================
 $qVerb=@{}   # bucket -> hashtable(texto -> contagem)
 foreach($r in $ld){
-  if((Norm $r[$L_FAT]) -notin $QUAL_MENSAL){ continue }
+  if(-not (IsQual $r[$L_FAT] $r[$L_VOCE])){ continue }
   $t = Norm $r[$L_DESAFIO]
   if($t.Length -lt 3 -or $t.Length -gt 160){ continue }
   if($t -match '@' -or $t -match 'http' -or $t -match '\d{4,}'){ continue }     # sem PII (email/telefone/cpf)
@@ -407,7 +412,7 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
   $apFat=ADist $coh 'fat' $FAT_ORDER; $apVoce=ADist $coh 'voce' $null; $apInt=ADist $coh 'intent' $null; $apEq=ADist $coh 'eq' @('1','2-7','8-15','16-50','50+')
   $apice=[pscustomobject]@{
     generatedAt=$nowIso; generatedAtBR=$nowBR
-    totalApice=$nAp; matched=$nC; matchedEmail=$mEmail; matchedName=$mName; qualified=($coh|Where-Object{$_.fat -in $QUAL_MENSAL}).Count; fatMedia=$apFatMedia
+    totalApice=$nAp; matched=$nC; matchedEmail=$mEmail; matchedName=$mName; qualified=($coh|Where-Object{ IsQual $_.fat $_.voce }).Count; fatMedia=$apFatMedia
     fatDist=@($apFat); voce=@($apVoce); intent=@($apInt); equipe=@($apEq)
     objec=@($apObj); quotes=@($apQuotes) }
   if($Mode -eq 'all' -or $Mode -eq 'apice'){ WriteJs 'data-apice.js' 'DASH_APICE' $apice }
@@ -458,7 +463,7 @@ if($Mode -eq 'all' -or $Mode -eq 'estudo'){
 if($Mode -eq 'all' -or $Mode -eq 'traffic'){
   WriteJs 'data.js' 'DASH_DATA' ([pscustomobject]@{
     generatedAt=$nowIso; generatedAtBR=$nowBR; taxMultiplier=$TAX
-    qualification='Faturamento mensal acima de R$ 100 mil'
+    qualification='Faturamento mensal a partir de R$ 100 mil (exceto CLT)'
     dateMin=$dates[0]; dateMax=$dates[-1]; buyersTotal=$paidCount; buyersMatched=$matchedBuyers
     daily=$dailyArr; grain=$grainArr; sellers=$sellersArr })
 }
