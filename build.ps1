@@ -152,7 +152,7 @@ foreach($vg in $VENDAS_GIDS){
   if(-not (Test-Path $vc)){ continue }
   $vv=Read-Csv $vc; if($vv.Count -lt 2){ continue }
   $vh=$vv[0]; $vd=$vv[1..($vv.Count-1)]
-  $Vdt=HdrLike $vh '*DT COMPRA*'; $Vem=HdrIndex $vh 'EMAIL'; if($Vem -lt 0){ $Vem=HdrLike $vh '*MAIL*' }; $Vval=HdrIndex $vh 'VALOR'
+  $Vdt=HdrLike $vh '*DT COMPRA*'; $Vem=HdrIndex $vh 'EMAIL'; if($Vem -lt 0){ $Vem=HdrLike $vh '*MAIL*' }; $Vval=HdrIndex $vh 'VALOR'; $Vsel=HdrIndex $vh 'VENDEDOR'
   if($Vdt -lt 0 -or $Vem -lt 0 -or $Vval -lt 0){ continue }
   foreach($row in $vd){
     $e=(Norm $row[$Vem]).ToLower(); $e=($e -split '[;,\s]')[0]; if($e -notmatch '@'){ continue }
@@ -164,7 +164,8 @@ foreach($vg in $VENDAS_GIDS){
     if($kiwPaidEmails.ContainsKey($e)){ continue }       # ja esta na kiwify -> nao duplica
     if($vendaSeen.ContainsKey($e)){ continue }           # dedup por e-mail
     $vendaSeen[$e]=1
-    $extras += [pscustomobject]@{date=$dk;email=$e;valor=$val} } }
+    $sel=''; if($Vsel -ge 0){ $sel=Norm $row[$Vsel] }    # nome da vendedora (col VENDEDOR) p/ aba Comercial
+    $extras += [pscustomobject]@{date=$dk;email=$e;valor=$val;seller=$sel} } }
 foreach($x in $extras){ $o=GetDay $x.date; $o.sales++; $o.revenue += $x.valor }   # entra no daily/funil/ROAS
 
 # vendas por dia × vendedora (coluna "Tracking src") — aba Comercial (period-aware)
@@ -172,7 +173,8 @@ foreach($x in $extras){ $o=GetDay $x.date; $o.sales++; $o.revenue += $x.valor } 
 function TitleName($s){ $s=Norm $s; if($s -eq ''){return ''}
   return (($s -split '\s+') | ForEach-Object { if($_.Length -gt 0){ $_.Substring(0,1).ToUpper()+$_.Substring(1).ToLower() } }) -join ' ' }
 # grafias diferentes da MESMA vendedora (corrige typo na fonte). Extensivel.
-$SELLER_ALIAS=@{ 'Evelyn'='Evellyn' }
+# ⚠️ Mayra e Mayara sao pessoas DIFERENTES — nao fundir. "Mayara Leonel" (planilha nova) = "Mayara" (kiwify).
+$SELLER_ALIAS=@{ 'Evelyn'='Evellyn'; 'Evelly'='Evellyn'; 'Mayara Leonel'='Mayara' }
 # faixas de faturamento (menor -> maior) p/ ver a composicao por vendedora (neutro)
 $FAT6=@('Menos de R$ 5 mil','Entre R$ 5 mil e R$ 10 mil','Entre R$ 10 mil e R$ 50 mil','Entre R$ 50 mil e R$ 100 mil','Entre R$ 100 mil e R$ 200 mil','Acima de 200 mil')
 # primeiro contato (data + faturamento) por e-mail — p/ tempo de fechamento e perfil por vendedora
@@ -189,6 +191,14 @@ foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K
     $l0=[datetime]::ParseExact($lf.date,'yyyy-MM-dd',$null); $p0=[datetime]::ParseExact($d,'yyyy-MM-dd',$null); $dd=($p0-$l0).Days
     if($dd -ge 0){ $o.daysSum += $dd; $o.daysN++ }
     $fi=$FAT6.IndexOf($lf.fat); if($fi -ge 0){ $o.fat[$fi]++ } } }   # fat = compradoras por faixa de faturamento
+# vendas EXTRAS (planilha nova) no Comercial — usa a coluna VENDEDOR, mesma normalizacao de nome
+foreach($x in $extras){ $sv=TitleName $x.seller; if($SELLER_ALIAS.ContainsKey($sv)){ $sv=$SELLER_ALIAS[$sv] }; if($sv -eq ''){$sv='SEM_VENDEDORA'}
+  $key="$($x.date)`u$sv"; if(-not $sellers.ContainsKey($key)){ $sellers[$key]=[pscustomobject]@{date=$x.date;seller=$sv;sales=0;revenue=0.0;daysSum=0;daysN=0;fat=@(0,0,0,0,0,0)} }
+  $o=$sellers[$key]; $o.sales++; $o.revenue += $x.valor
+  if($leadFirst.ContainsKey($x.email)){ $lf=$leadFirst[$x.email]
+    $l0=[datetime]::ParseExact($lf.date,'yyyy-MM-dd',$null); $p0=[datetime]::ParseExact($x.date,'yyyy-MM-dd',$null); $dd=($p0-$l0).Days
+    if($dd -ge 0){ $o.daysSum += $dd; $o.daysN++ }
+    $fi=$FAT6.IndexOf($lf.fat); if($fi -ge 0){ $o.fat[$fi]++ } } }
 $sellersArr=@($sellers.Values | Sort-Object date)
 
 # ===================================================================
