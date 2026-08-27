@@ -162,6 +162,26 @@ tbody tr:hover{background:#f7fafd}
 .ev-kv-r{align-items:flex-end;text-align:right}
 .ev-k{font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#93a1af;font-weight:600}
 .ev-v{font-size:13px;font-weight:800;color:#3a4a5a}
+/* aba Melhores Ads — ranking simples de criativos (period-aware) */
+.ba-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(258px,1fr));gap:16px;margin-top:10px}
+.ba-card{position:relative;border:1px solid var(--line);border-radius:16px;padding:18px 17px 16px;background:#fff;box-shadow:var(--shadow);text-align:center}
+.ba-card.ba-top{background:linear-gradient(180deg,#fffdf3,#ffffff)}
+.ba-card.ba-top1{border-color:#e9c95d;box-shadow:0 6px 20px rgba(214,170,40,.18)}
+.ba-card.ba-top2{border-color:#cfd6dc}
+.ba-card.ba-top3{border-color:#e2b892}
+.ba-rank{font-size:34px;line-height:1;font-weight:800;color:var(--muted)}
+.ba-card.ba-top .ba-rank{font-size:40px}
+.ba-name{margin-top:8px;font-weight:800;font-size:16px;color:var(--ink);word-break:break-word}
+.ba-stats{display:flex;justify-content:center;gap:14px;margin-top:14px}
+.ba-stat{flex:1;background:#f6f9fc;border-radius:12px;padding:10px 6px}
+.ba-num{display:block;font-size:30px;font-weight:800;letter-spacing:-1px;color:var(--green);line-height:1}
+.ba-num.ba-q{color:var(--blue2)}
+.ba-lbl{display:block;margin-top:4px;font-size:10.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.ba-bar{height:9px;border-radius:6px;background:#eef2f6;overflow:hidden;margin-top:14px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.03)}
+.ba-fill{height:100%;border-radius:6px;background:linear-gradient(90deg,#f0b429,#e0913a);transition:width .5s}
+.ba-pts{margin-top:8px;font-size:12px;font-weight:700;color:#b7791f}
+.ba-link{margin-top:13px;padding-top:12px;border-top:1px dashed var(--line)}
+.ba-link-soon{display:inline-block;font-size:12px;color:#9aa6b2;background:#f4f6f8;border-radius:8px;padding:7px 12px;font-style:italic}
 /* bloco de receita (Investimento · Receita · ROAS) — topo da aba Funil */
 .rev-block{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:stretch;margin:16px 0 0;background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
 .rev-card{padding:16px 22px;display:flex;flex-direction:column;justify-content:center;gap:5px}

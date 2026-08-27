@@ -513,6 +513,7 @@ function render(){
   renderDaily();
   renderSales();
   renderComercial();
+  renderBestAds();
   renderAscensao();
   renderLeadsChart();
   renderSpendChart();
@@ -583,6 +584,41 @@ function renderComercial(){
       <div class="fatbar">${segs}</div>
       <div class="qval"><b>${int(x.tot)}</b> <span class="sub">vendas</span></div></div>`;
   }).join('') : '<div class="sub">Sem base no período.</div>');
+}
+
+// ===================== melhores anúncios (period-aware, bem simples p/ o comercial) =====================
+function renderBestAds(){
+  const map=new Map();
+  for(const r of D.grain){ if(r.date<state.start||r.date>state.end) continue;
+    if(!r.ad || r.ad==='SEM_UTM' || r.ad==='NAO_ATRIBUIDO') continue;   // só criativos identificáveis
+    let o=map.get(r.ad); if(!o){o={ad:r.ad,label:pretty(r.ad),sales:0,qlf:0,leads:0,revenue:0};map.set(r.ad,o);}
+    o.sales+=r.sales; o.qlf+=r.qlf; o.leads+=r.leads; o.revenue+=r.revenue; }
+  let list=[...map.values()].filter(o=>o.sales>0||o.qlf>0);
+  // pontos: cada VENDA vale 10, cada LEAD QUALIFICADA vale 1 — simples e transparente
+  list.forEach(o=>o.pts=o.sales*10+o.qlf);
+  list.sort((a,b)=> b.pts-a.pts || b.sales-a.sales || b.qlf-a.qlf);
+  const top=list.slice(0,8);
+  const per=`${state.start.split('-').reverse().join('/')} → ${state.end.split('-').reverse().join('/')}`;
+  document.getElementById('bestadsIntro').innerHTML =
+    `Os anúncios que mais trouxeram <b>vendas</b> e <b>leads qualificadas</b> no período <b>${per}</b>. Ordem por pontos: cada <b>venda = 10 pontos</b> · cada <b>lead qualificada = 1 ponto</b>. Troque a data lá em cima que o ranking muda junto. <span class="sub">O espaço do link fica reservado embaixo de cada card — a gente conecta depois.</span>`;
+  const grid=document.getElementById('bestadsGrid');
+  if(top.length===0){ grid.innerHTML='<div class="micro-note" style="padding:18px">Nenhuma venda ou lead qualificada com anúncio identificado neste período.</div>'; return; }
+  const maxPts=top[0].pts||1;
+  grid.innerHTML = top.map((o,i)=>{
+    const medal = i===0?'🥇':(i===1?'🥈':(i===2?'🥉':'#'+(i+1)));
+    const w=Math.max(6,o.pts/maxPts*100);
+    return `<div class="ba-card${i<3?' ba-top ba-top'+(i+1):''}">
+      <div class="ba-rank">${medal}</div>
+      <div class="ba-name" title="${esc(o.label)}">${esc(o.label)}</div>
+      <div class="ba-stats">
+        <div class="ba-stat"><span class="ba-num">${int(o.sales)}</span><span class="ba-lbl">${o.sales===1?'venda':'vendas'}</span></div>
+        <div class="ba-stat"><span class="ba-num ba-q">${int(o.qlf)}</span><span class="ba-lbl">leads qualificadas</span></div>
+      </div>
+      <div class="ba-bar"><div class="ba-fill" style="width:${w.toFixed(0)}%"></div></div>
+      <div class="ba-pts">⭐ ${int(o.pts)} pontos</div>
+      <div class="ba-link"><span class="ba-link-soon">🔗 link do anúncio — em breve</span></div>
+    </div>`;
+  }).join('');
 }
 
 // ===================== ascensão (escada de valor Tráfego → Cocktail → Ápice) =====================
@@ -824,8 +860,8 @@ function init(){
   document.getElementById('qualNote').textContent = 'Qualificado = '+D.qualification;
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
-  const PAGES=['funnel','datas','obj','insights','comercial','tempo','perfil','apice','ascensao'];
-  const NOCTRL=['insights','tempo','perfil','apice','datas']; // abas de base completa (sem seletor de período); comercial e ascensao usam o seletor
+  const PAGES=['funnel','datas','obj','insights','comercial','bestads','tempo','perfil','apice','ascensao'];
+  const NOCTRL=['insights','tempo','perfil','apice','datas']; // abas de base completa (sem seletor de período); comercial, bestads e ascensao usam o seletor
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
     const pg=b.dataset.page;
@@ -849,5 +885,6 @@ function init(){
   else if(hash.includes('apice')||hash.includes('ápice')){ document.querySelector('.pagebtn[data-page="apice"]').click(); }
   else if(hash.includes('ascens')){ document.querySelector('.pagebtn[data-page="ascensao"]').click(); }
   else if(hash.includes('datas')){ document.querySelector('.pagebtn[data-page="datas"]').click(); }
+  else if(hash.includes('bestads')||hash.includes('melhores')||hash.includes('anuncio')){ document.querySelector('.pagebtn[data-page="bestads"]').click(); }
 }
 init();
