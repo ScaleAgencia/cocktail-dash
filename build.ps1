@@ -26,6 +26,12 @@ $QUERIES_ID = '1RJC_VqNbRF8Xir_jQQ4KBdA0Bh9u4AUiDQPxr1sPEHU'; $QUERIES_GID = '11
 $MASTER_ID  = '1WuETdVje43yvMfyQDHO1PObXj_G9G-t6JjG6q987Z4o'
 $LEADS_GID  = '603619749'
 $KIWIFY_GID = '1987730935'
+# Planilha de CONTROLE DE VENDAS manual (Maira) — 1 aba por evento. AGOSTO em diante ela pega
+# vendas que a kiwify NAO tem (pagamento manual etc.). Une por e-mail no FUNIL (daily+arvore), sem
+# duplicar. ⚠️ A aba "Datas" (vagas por evento) NAO usa isto — continua na kiwify (pedido do cliente).
+$VENDAS_ID   = '1NoRHqbeO9fVTacQgADIUvPMfdt0v5HBgtMr8m3v9858'
+$VENDAS_GIDS = @('179128172','1136083474','454135515','365567641','992273412') # 05/08,25/08,01/09,08/09,14/10
+$VENDAS_FROM = '2026-08-01'   # so vendas com DT COMPRA a partir daqui
 $TAX = 1.1385
 # QUALIFICACAO (regra nova ago/2026 do cliente): DESqualificado = fatura < 100 mil (col H "faturamento mensal")
 # OU e CLT (col F "Voce e..."). TUDO ALEM disso e qualificado (default = qualificado, robusto a novas
@@ -134,11 +140,32 @@ function BrDate($s){ $s=Norm $s; if($s -match '^(\d{2})/(\d{2})/(\d{4})'){ retur
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $o=GetDay $d; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
 
-# AJUSTE MANUAL — vendas reais que NAO entraram na planilha kiwify (fantasma). Receita = ticket medio.
-# ⚠️ se um dia essas vendas entrarem na planilha, ZERAR aqui p/ nao duplicar.
-$SALES_ADJ=@{ '2026-08-12'=2 }
-$_tS=0;$_tR=0.0; foreach($o in $daily.Values){ $_tS+=$o.sales; $_tR+=$o.revenue }; $_avgTk=0.0; if($_tS -gt 0){$_avgTk=$_tR/$_tS}
-foreach($ad in $SALES_ADJ.Keys){ $o=GetDay $ad; $o.sales += $SALES_ADJ[$ad]; $o.revenue += $SALES_ADJ[$ad]*$_avgTk }
+# ---- VENDAS EXTRAS (planilha de controle Maira) — agosto+ que a kiwify NAO tem -----------------
+# So VALOR>0 = venda de verdade (linhas sem valor = lead em negociacao). Dedup por e-mail e exclui
+# quem ja esta paga na kiwify (senao duplica). Substitui o antigo ajuste manual das 2 fantasmas de
+# 12/08 (agora vem reais daqui: patricia.bernardon + francatime).
+$kiwPaidEmails=@{}; foreach($r in $kd){ if((Norm $r[$K_STAT]) -eq 'paid'){ $e=(Norm $r[$K_EMAIL]).ToLower(); if($e -match '@'){ $kiwPaidEmails[$e]=1 } } }
+$vendaSeen=@{}; $extras=@()
+foreach($vg in $VENDAS_GIDS){
+  $vc=Join-Path $dataDir "venda_$vg.csv"
+  try{ Get-Sheet $VENDAS_ID $vg $vc }catch{ continue }
+  if(-not (Test-Path $vc)){ continue }
+  $vv=Read-Csv $vc; if($vv.Count -lt 2){ continue }
+  $vh=$vv[0]; $vd=$vv[1..($vv.Count-1)]
+  $Vdt=HdrLike $vh '*DT COMPRA*'; $Vem=HdrIndex $vh 'EMAIL'; if($Vem -lt 0){ $Vem=HdrLike $vh '*MAIL*' }; $Vval=HdrIndex $vh 'VALOR'
+  if($Vdt -lt 0 -or $Vem -lt 0 -or $Vval -lt 0){ continue }
+  foreach($row in $vd){
+    $e=(Norm $row[$Vem]).ToLower(); $e=($e -split '[;,\s]')[0]; if($e -notmatch '@'){ continue }
+    $vs=(Norm $row[$Vval]) -replace '[^\d,\.]',''; if($vs -eq ''){ continue }
+    $val=[double]($vs -replace '\.','' -replace ',','.'); if($val -le 0){ continue }   # sem VALOR = ainda nao e venda
+    $dt=Norm $row[$Vdt]; if($dt -notmatch '^(\d{1,2})/(\d{1,2})'){ continue }
+    $dk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1])
+    if($dk -lt $VENDAS_FROM){ continue }                # so agosto+
+    if($kiwPaidEmails.ContainsKey($e)){ continue }       # ja esta na kiwify -> nao duplica
+    if($vendaSeen.ContainsKey($e)){ continue }           # dedup por e-mail
+    $vendaSeen[$e]=1
+    $extras += [pscustomobject]@{date=$dk;email=$e;valor=$val} } }
+foreach($x in $extras){ $o=GetDay $x.date; $o.sales++; $o.revenue += $x.valor }   # entra no daily/funil/ROAS
 
 # vendas por dia × vendedora (coluna "Tracking src") — aba Comercial (period-aware)
 # normaliza caixa do nome (fonte mistura "Michele"/"michele" -> nao dividir a vendedora)
@@ -197,6 +224,14 @@ foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K
     $o=GetGrain $d $c $s $a
     $obk=GetObjB $d $m.bucket; $obk.buyers++ } else { $o=GetGrain $d 'NAO_ATRIBUIDO' 'NAO_ATRIBUIDO' 'NAO_ATRIBUIDO' }
   $o.sales++; $o.revenue += $rev }
+
+# vendas EXTRAS na arvore: atribui por e-mail se a compradora veio do trafego, senao NAO_ATRIBUIDO
+foreach($x in $extras){ $e=$x.email
+  if($leadByEmail.ContainsKey($e)){ $m=$leadByEmail[$e]
+    $c=if($m.campaign){$m.campaign}else{'NAO_ATRIBUIDO'}; $s=if($m.adset){$m.adset}else{'NAO_ATRIBUIDO'}; $a=if($m.ad){$m.ad}else{'NAO_ATRIBUIDO'}
+    $o=GetGrain $x.date $c $s $a
+    $obk=GetObjB $x.date $m.bucket; $obk.buyers++ } else { $o=GetGrain $x.date 'NAO_ATRIBUIDO' 'NAO_ATRIBUIDO' 'NAO_ATRIBUIDO' }
+  $o.sales++; $o.revenue += $x.valor }
 
 # ===================================================================
 #  VERBATIMS — o que as QUALIFICADAS relatam, por objecao (base completa)
