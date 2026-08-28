@@ -30,8 +30,12 @@ $KIWIFY_GID = '1987730935'
 # vendas que a kiwify NAO tem (pagamento manual etc.). Une por e-mail no FUNIL (daily+arvore), sem
 # duplicar. ⚠️ A aba "Datas" (vagas por evento) NAO usa isto — continua na kiwify (pedido do cliente).
 $VENDAS_ID   = '1NoRHqbeO9fVTacQgADIUvPMfdt0v5HBgtMr8m3v9858'
-$VENDAS_GIDS = @('179128172','1136083474','454135515','365567641','992273412') # 05/08,25/08,01/09,08/09,14/10
-$VENDAS_FROM = '2026-08-01'   # so vendas com DT COMPRA a partir daqui
+# TODAS as abas de evento em ordem cronologica (1 aba por Cocktail). A aba Datas usa todas (enche cada
+# evento pela DATA COCKTAIL); o funil/ROAS so considera compras a partir de $VENDAS_FROM (agosto+).
+$VENDAS_GIDS = @('0','1144515540','688780550','981750885','1769268662','1189147493','877739094','2029680212','179128172','1136083474','454135515','365567641','992273412')
+# fallback da data do evento p/ abas sem coluna "DATA COCKTAIL" (ex.: 02 Fev) — gid -> dateKey do evento
+$VENDAS_EVDATE = @{ '0'='2026-02-02';'1144515540'='2026-03-05';'688780550'='2026-04-07';'981750885'='2026-05-27';'1769268662'='2026-06-09';'1189147493'='2026-07-14';'877739094'='2026-07-21';'2029680212'='2026-07-30';'179128172'='2026-08-05';'1136083474'='2026-08-25';'454135515'='2026-09-01';'365567641'='2026-09-08';'992273412'='2026-10-14' }
+$VENDAS_FROM = '2026-08-01'   # funil: so vendas com DT COMPRA a partir daqui
 $TAX = 1.1385
 # QUALIFICACAO (regra nova ago/2026 do cliente): DESqualificado = fatura < 100 mil (col H "faturamento mensal")
 # OU e CLT (col F "Voce e..."). TUDO ALEM disso e qualificado (default = qualificado, robusto a novas
@@ -147,28 +151,32 @@ foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K
 #   - $extras  = funil (daily/arvore/comercial): so compras a partir de $VENDAS_FROM (agosto+).
 #   - a aba Datas usa $manualExtras direto, por DATA COCKTAIL (independe da data da compra).
 # Substitui o antigo ajuste manual das 2 fantasmas de 12/08 (agora reais: patricia.bernardon + francatime).
+# Parser por CONTEUDO (nao por nome de coluna): as abas antigas variam (sem cabecalho, titulo na 1a
+# linha, colunas deslocadas). Detecta por padrao: e-mail = celula com @; valor = celula R$ BR; data do
+# EVENTO = celula dd/mm/AAAA (com ano); data da COMPRA = celula dd/mm (sem ano). Linhas de titulo/
+# cabecalho caem fora sozinhas (nao tem @ nem valor). Consolida por e-mail entre abas (preenche o que faltar).
+$reMoney='^\d{1,3}(\.\d{3})*,\d{2}$'; $reEvDate='^(\d{1,2})/(\d{1,2})/\d{2,4}$'; $reBuyDate='^(\d{1,2})/(\d{1,2})$'
 $kiwPaidEmails=@{}; foreach($r in $kd){ if((Norm $r[$K_STAT]) -eq 'paid'){ $e=(Norm $r[$K_EMAIL]).ToLower(); if($e -match '@'){ $kiwPaidEmails[$e]=1 } } }
-$vendaSeen=@{}; $manualExtras=@()
+$manualByEmail=[ordered]@{}
 foreach($vg in $VENDAS_GIDS){
   $vc=Join-Path $dataDir "venda_$vg.csv"
   try{ Get-Sheet $VENDAS_ID $vg $vc }catch{ continue }
   if(-not (Test-Path $vc)){ continue }
-  $vv=Read-Csv $vc; if($vv.Count -lt 2){ continue }
-  $vh=$vv[0]; $vd=$vv[1..($vv.Count-1)]
-  $Vdt=HdrLike $vh '*DT COMPRA*'; $Vem=HdrIndex $vh 'EMAIL'; if($Vem -lt 0){ $Vem=HdrLike $vh '*MAIL*' }; $Vval=HdrIndex $vh 'VALOR'; $Vsel=HdrIndex $vh 'VENDEDOR'
-  $Vev=HdrIndex $vh 'DATA COCKTAIL'; if($Vev -lt 0){ $Vev=HdrLike $vh '*COCKTAIL*' }
-  if($Vem -lt 0 -or $Vval -lt 0){ continue }
-  foreach($row in $vd){
-    $e=(Norm $row[$Vem]).ToLower(); $e=($e -split '[;,\s]')[0]; if($e -notmatch '@'){ continue }
-    $vs=(Norm $row[$Vval]) -replace '[^\d,\.]',''; if($vs -eq ''){ continue }
-    $val=[double]($vs -replace '\.','' -replace ',','.'); if($val -le 0){ continue }   # sem VALOR = ainda nao e venda
-    if($kiwPaidEmails.ContainsKey($e)){ continue }       # ja esta na kiwify -> NAO duplica
-    if($vendaSeen.ContainsKey($e)){ continue }           # dedup por e-mail (uma vez so)
-    $vendaSeen[$e]=1
-    $dtk=''; if($Vdt -ge 0){ $dt=Norm $row[$Vdt]; if($dt -match '^(\d{1,2})/(\d{1,2})'){ $dtk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]) } }   # data da compra (pode faltar)
-    $evk=''; if($Vev -ge 0){ $evr=Norm $row[$Vev]; if($evr -match '(\d{1,2})/(\d{1,2})'){ $evk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]) } }             # data do evento (DATA COCKTAIL)
-    $sel=''; if($Vsel -ge 0){ $sel=Norm $row[$Vsel] }    # nome da vendedora (col VENDEDOR) p/ aba Comercial
-    $manualExtras += [pscustomobject]@{email=$e;valor=$val;dtKey=$dtk;evKey=$evk;seller=$sel} } }
+  $vv=Read-Csv $vc; if($vv.Count -lt 1){ continue }
+  $tabEv=''; if($VENDAS_EVDATE.ContainsKey($vg)){ $tabEv=$VENDAS_EVDATE[$vg] }
+  foreach($row in $vv){
+    $e=''; foreach($cell in $row){ $c=(Norm $cell).ToLower(); if($c -match '@'){ $e=($c -split '[;,\s]')[0]; break } }
+    if($e -notmatch '@'){ continue }
+    $val=0.0; foreach($cell in $row){ $c=((Norm $cell) -replace '[R$\s]',''); if($c -match $reMoney){ $val=[double]($c -replace '\.','' -replace ',','.'); break } }
+    if($val -le 0){ continue }                       # sem VALOR = ainda nao e venda
+    if($kiwPaidEmails.ContainsKey($e)){ continue }   # ja paga na kiwify -> NAO duplica
+    $evk=''; $sel=''; for($ci=0;$ci -lt $row.Count;$ci++){ $c=Norm $row[$ci]; if($c -match $reEvDate){ $evk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); if($ci+1 -lt $row.Count){ $sel=Norm $row[$ci+1] }; break } }
+    if($evk -eq ''){ $evk=$tabEv }                   # fallback: data do evento da propria aba
+    $dtk=''; foreach($cell in $row){ $c=Norm $cell; if($c -match $reBuyDate){ $dtk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); break } }
+    if(-not $manualByEmail.Contains($e)){ $manualByEmail[$e]=[pscustomobject]@{email=$e;valor=$val;dtKey=$dtk;evKey=$evk;seller=$sel} }
+    else{ $o=$manualByEmail[$e]; if($o.evKey -eq ''){$o.evKey=$evk}; if($o.dtKey -eq ''){$o.dtKey=$dtk}; if($o.seller -eq ''){$o.seller=$sel} } }   # consolida entre abas
+}
+$manualExtras=@($manualByEmail.Values)   # 1 registro por pessoa (fora da kiwify), com evento + compra + vendedora
 # funil = so compras com data valida a partir de agosto (mesma regra de antes)
 $extras=@()
 foreach($m in $manualExtras){ if($m.dtKey -ne '' -and $m.dtKey -ge $VENDAS_FROM){ $extras += [pscustomobject]@{date=$m.dtKey;email=$m.email;valor=$m.valor;seller=$m.seller} } }
