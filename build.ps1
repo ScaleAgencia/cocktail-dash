@@ -140,12 +140,15 @@ function BrDate($s){ $s=Norm $s; if($s -match '^(\d{2})/(\d{2})/(\d{4})'){ retur
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $o=GetDay $d; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
 
-# ---- VENDAS EXTRAS (planilha de controle Maira) — agosto+ que a kiwify NAO tem -----------------
-# So VALOR>0 = venda de verdade (linhas sem valor = lead em negociacao). Dedup por e-mail e exclui
-# quem ja esta paga na kiwify (senao duplica). Substitui o antigo ajuste manual das 2 fantasmas de
-# 12/08 (agora vem reais daqui: patricia.bernardon + francatime).
+# ---- VENDAS EXTRAS (planilha de controle Maira) — vendas que a kiwify NAO tem -------------------
+# So VALOR>0 = venda de verdade (linhas sem valor = lead em negociacao). DEDUP por e-mail e EXCLUI
+# quem ja esta paga na kiwify (garante: NENHUMA venda contada 2x). Monta 1 lista deduplicada
+# ($manualExtras) com data-da-compra (DT COMPRA) E data-do-evento (DATA COCKTAIL). Dela deriva:
+#   - $extras  = funil (daily/arvore/comercial): so compras a partir de $VENDAS_FROM (agosto+).
+#   - a aba Datas usa $manualExtras direto, por DATA COCKTAIL (independe da data da compra).
+# Substitui o antigo ajuste manual das 2 fantasmas de 12/08 (agora reais: patricia.bernardon + francatime).
 $kiwPaidEmails=@{}; foreach($r in $kd){ if((Norm $r[$K_STAT]) -eq 'paid'){ $e=(Norm $r[$K_EMAIL]).ToLower(); if($e -match '@'){ $kiwPaidEmails[$e]=1 } } }
-$vendaSeen=@{}; $extras=@()
+$vendaSeen=@{}; $manualExtras=@()
 foreach($vg in $VENDAS_GIDS){
   $vc=Join-Path $dataDir "venda_$vg.csv"
   try{ Get-Sheet $VENDAS_ID $vg $vc }catch{ continue }
@@ -153,19 +156,22 @@ foreach($vg in $VENDAS_GIDS){
   $vv=Read-Csv $vc; if($vv.Count -lt 2){ continue }
   $vh=$vv[0]; $vd=$vv[1..($vv.Count-1)]
   $Vdt=HdrLike $vh '*DT COMPRA*'; $Vem=HdrIndex $vh 'EMAIL'; if($Vem -lt 0){ $Vem=HdrLike $vh '*MAIL*' }; $Vval=HdrIndex $vh 'VALOR'; $Vsel=HdrIndex $vh 'VENDEDOR'
-  if($Vdt -lt 0 -or $Vem -lt 0 -or $Vval -lt 0){ continue }
+  $Vev=HdrIndex $vh 'DATA COCKTAIL'; if($Vev -lt 0){ $Vev=HdrLike $vh '*COCKTAIL*' }
+  if($Vem -lt 0 -or $Vval -lt 0){ continue }
   foreach($row in $vd){
     $e=(Norm $row[$Vem]).ToLower(); $e=($e -split '[;,\s]')[0]; if($e -notmatch '@'){ continue }
     $vs=(Norm $row[$Vval]) -replace '[^\d,\.]',''; if($vs -eq ''){ continue }
     $val=[double]($vs -replace '\.','' -replace ',','.'); if($val -le 0){ continue }   # sem VALOR = ainda nao e venda
-    $dt=Norm $row[$Vdt]; if($dt -notmatch '^(\d{1,2})/(\d{1,2})'){ continue }
-    $dk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1])
-    if($dk -lt $VENDAS_FROM){ continue }                # so agosto+
-    if($kiwPaidEmails.ContainsKey($e)){ continue }       # ja esta na kiwify -> nao duplica
-    if($vendaSeen.ContainsKey($e)){ continue }           # dedup por e-mail
+    if($kiwPaidEmails.ContainsKey($e)){ continue }       # ja esta na kiwify -> NAO duplica
+    if($vendaSeen.ContainsKey($e)){ continue }           # dedup por e-mail (uma vez so)
     $vendaSeen[$e]=1
+    $dtk=''; if($Vdt -ge 0){ $dt=Norm $row[$Vdt]; if($dt -match '^(\d{1,2})/(\d{1,2})'){ $dtk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]) } }   # data da compra (pode faltar)
+    $evk=''; if($Vev -ge 0){ $evr=Norm $row[$Vev]; if($evr -match '(\d{1,2})/(\d{1,2})'){ $evk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]) } }             # data do evento (DATA COCKTAIL)
     $sel=''; if($Vsel -ge 0){ $sel=Norm $row[$Vsel] }    # nome da vendedora (col VENDEDOR) p/ aba Comercial
-    $extras += [pscustomobject]@{date=$dk;email=$e;valor=$val;seller=$sel} } }
+    $manualExtras += [pscustomobject]@{email=$e;valor=$val;dtKey=$dtk;evKey=$evk;seller=$sel} } }
+# funil = so compras com data valida a partir de agosto (mesma regra de antes)
+$extras=@()
+foreach($m in $manualExtras){ if($m.dtKey -ne '' -and $m.dtKey -ge $VENDAS_FROM){ $extras += [pscustomobject]@{date=$m.dtKey;email=$m.email;valor=$m.valor;seller=$m.seller} } }
 foreach($x in $extras){ $o=GetDay $x.date; $o.sales++; $o.revenue += $x.valor }   # entra no daily/funil/ROAS
 
 # vendas por dia × vendedora (coluna "Tracking src") — aba Comercial (period-aware)
@@ -487,14 +493,21 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
 # ===================================================================
 if($Mode -eq 'all' -or $Mode -eq 'datas'){
   $K_OFERTA=HdrIndex $kh 'Oferta'
-  $evMap=@{}
+  $evMap=@{}   # chave = dateKey do evento -> {ev(label);dateKey;vendas;revenue}
+  $evSeen=@{}  # e-mail|evento -> 1 : uma pessoa conta 1 vaga por evento (a kiwify as vezes repete a linha)
   foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $of=Norm $r[$K_OFERTA]; if($of -eq ''){continue}
     $ev=$of; $ix=$ev.IndexOf(' - '); if($ix -ge 0){ $ev=$ev.Substring(0,$ix).Trim() }   # "Evento 07/04 - Convite especial" -> "Evento 07/04"
-    if(-not $evMap.ContainsKey($ev)){ $evMap[$ev]=[pscustomobject]@{ev=$ev;vendas=0;revenue=0.0} }
-    $o=$evMap[$ev]; $o.vendas++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
+    $dk='9999-99-99'; if($ev -match '(\d{2})/(\d{2})'){ $dk="2026-$($Matches[2])-$($Matches[1])" }
+    $em=(Norm $r[$K_EMAIL]).ToLower(); if($em -ne ''){ $sk="$em|$dk"; if($evSeen.ContainsKey($sk)){ continue }; $evSeen[$sk]=1 }  # dedup mesma pessoa/mesmo evento
+    if(-not $evMap.ContainsKey($dk)){ $evMap[$dk]=[pscustomobject]@{ev=$ev;dateKey=$dk;vendas=0;revenue=0.0} }
+    $o=$evMap[$dk]; $o.vendas++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
+  # + vendas MANUAIS (planilha de controle) que a kiwify NAO tem — por DATA COCKTAIL. Ja sao deduplicadas
+  # e excluem quem esta na kiwify, entao NAO duplicam nenhuma venda. Enchem as vagas do evento certo.
+  foreach($x in $manualExtras){ $dk=$x.evKey; if($dk -eq ''){ continue }
+    if(-not $evMap.ContainsKey($dk)){ $lbl='Evento '+([datetime]::ParseExact($dk,'yyyy-MM-dd',$null)).ToString('dd/MM'); $evMap[$dk]=[pscustomobject]@{ev=$lbl;dateKey=$dk;vendas=0;revenue=0.0} }
+    $o=$evMap[$dk]; $o.vendas++; $o.revenue += $x.valor }
   $evArr=@()
-  foreach($e in $evMap.Values){ $dk='9999-99-99'; if($e.ev -match '(\d{2})/(\d{2})'){ $dk="2026-$($Matches[2])-$($Matches[1])" }
-    $evArr+=[pscustomobject]@{ev=$e.ev;dateKey=$dk;vendas=$e.vendas;revenue=[math]::Round($e.revenue,2)} }
+  foreach($e in $evMap.Values){ $evArr+=[pscustomobject]@{ev=$e.ev;dateKey=$e.dateKey;vendas=$e.vendas;revenue=[math]::Round($e.revenue,2)} }
   $evArr=@($evArr | Sort-Object dateKey)
   $datas=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; meta=30; today=$dmax; events=$evArr }
   WriteJs 'data-datas.js' 'DASH_DATAS' $datas
