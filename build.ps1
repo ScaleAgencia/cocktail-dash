@@ -444,9 +444,14 @@ $estudo=[pscustomobject]@{
 # ===================================================================
 if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
   function NameKey($s){ return ((Deaccent (Norm $s)) -replace '\s+',' ').Trim() }
-  $APICE_ID='1_TiMsH24-mmB-2CcKo5rNMtEQ09gXuJr_RSMv3AUfW4'
+  # Planilha REAL de participantes do Apice (nova, ago/2026). Colunas [0]=nome [1]=email, sem cabecalho. Ticket R$150k.
+  $APICE_ID='19Ee8ZK6yXk3D1DUssv3ASjS76rIAOqhDOLic2yfYQ1Q'
+  # ⚠️ Linhas AMARELAS (fill FFF2CC) na planilha = DESCONSIDERAR (pedido do cliente). gviz/CSV NAO traz
+  # cor, entao a lista de e-mails amarelos fica FIXA aqui (detectada 1x via export XLSX). Se o cliente
+  # pintar/despintar linhas, ATUALIZAR esta lista. 29 amarelas de 113 -> 84 participantes.
+  $APICE_EXCLUDE=@{}; foreach($e in @('alinedraghifr@hotmail.com','andressahuve@gmail.com','brenda.fagundes@outlook.com','brunagrupobm@gmail.com','clickgo.viagens@gmail.com','clubedadisney@gmail.com','consultoriadenegociospt@gmail.com','contato.larissasteimbach@gmail.com','cristianekassim@gmail.com','daniela_vieiraloura@hotmail.com','denise0407@me.com','emanuella.pereirasantos@hotmail.com','fefreitas02@gmail.com','fernaroque@hotmail.com','francisdias@acerterh.com.br','kerastinni@gmail.com','larissa.georgean@gmail.com','liliane.kami@gmail.com','lolopuga@icloud.com','lucieners175@gmail.com','marcela@marcelamenezes.com','marcella@massotipaes.com.br','marciaceci26@gmail.com','nubiavfrodrigues@hotmail.com','priscila_reis@b2ytransportes.com.br','samarachaar2@gmail.com','sc@suellencampanhola.com','tkoproski@bloominternationaldoulas.com','vacris.santos2105@gmail.com')){ $APICE_EXCLUDE[$e]=1 }
   $aCsv=Join-Path $dataDir 'apice.csv'; Get-Sheet $APICE_ID '0' $aCsv
-  $apList=@(); foreach($r in (Read-Csv $aCsv)){ if($r.Count -lt 2){continue}; $em=(Norm $r[1]).ToLower(); if($em -notmatch '@'){continue}; $apList+=[pscustomobject]@{email=$em;key=(NameKey $r[0])} }
+  $apList=@(); foreach($r in (Read-Csv $aCsv)){ if($r.Count -lt 2){continue}; $em=(Norm $r[1]).ToLower(); if($em -notmatch '@'){continue}; if($APICE_EXCLUDE.ContainsKey($em)){continue}; $apList+=[pscustomobject]@{email=$em;key=(NameKey $r[0])} }
   $apEmail=@{}; $apName=@{}
   foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); $full=NameKey (($r[0])+' '+($r[1]))
     if($e -ne '' -and -not $apEmail.ContainsKey($e)){ $apEmail[$e]=$r }
