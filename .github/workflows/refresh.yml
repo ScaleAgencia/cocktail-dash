@@ -21,8 +21,8 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.js data-obj.js data-insights.js
-          if (git status --porcelain data.js data-obj.js data-insights.js) {
+          git add -A
+          if (git status --porcelain) {
             git commit -m ("auto: cloud " + (Get-Date -Format 'yyyy-MM-dd HH:mm'))
             git pull --rebase origin main
             git push
