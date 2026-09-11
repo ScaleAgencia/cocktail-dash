@@ -30,11 +30,10 @@ $KIWIFY_GID = '1987730935'
 # vendas que a kiwify NAO tem (pagamento manual etc.). Une por e-mail no FUNIL (daily+arvore), sem
 # duplicar. ⚠️ A aba "Datas" (vagas por evento) NAO usa isto — continua na kiwify (pedido do cliente).
 $VENDAS_ID   = '1NoRHqbeO9fVTacQgADIUvPMfdt0v5HBgtMr8m3v9858'
-# TODAS as abas de evento em ordem cronologica (1 aba por Cocktail). A aba Datas usa todas (enche cada
-# evento pela DATA COCKTAIL); o funil/ROAS so considera compras a partir de $VENDAS_FROM (agosto+).
-$VENDAS_GIDS = @('0','1144515540','688780550','981750885','1769268662','1189147493','877739094','2029680212','179128172','1136083474','454135515','365567641','992273412')
-# fallback da data do evento p/ abas sem coluna "DATA COCKTAIL" (ex.: 02 Fev) — gid -> dateKey do evento
-$VENDAS_EVDATE = @{ '0'='2026-02-02';'1144515540'='2026-03-05';'688780550'='2026-04-07';'981750885'='2026-05-27';'1769268662'='2026-06-09';'1189147493'='2026-07-14';'877739094'='2026-07-21';'2029680212'='2026-07-30';'179128172'='2026-08-05';'1136083474'='2026-08-25';'454135515'='2026-09-01';'365567641'='2026-09-08';'992273412'='2026-10-14' }
+# As abas de evento (1 por Cocktail) e a data de cada uma sao AUTO-DESCOBERTAS do htmlview logo antes do
+# parse (a planilha ganha abas novas toda semana; hardcodar CONGELA eventos futuros). Fallback embutido.
+$VENDAS_GIDS_FB = @('0','1144515540','688780550','981750885','1769268662','1189147493','877739094','2029680212','179128172','1136083474','454135515','365567641','992273412')
+$VENDAS_EVDATE_FB = @{ '0'='2026-02-02';'1144515540'='2026-03-05';'688780550'='2026-04-07';'981750885'='2026-05-27';'1769268662'='2026-06-09';'1189147493'='2026-07-14';'877739094'='2026-07-21';'2029680212'='2026-07-30';'179128172'='2026-08-05';'1136083474'='2026-08-25';'454135515'='2026-09-01';'365567641'='2026-09-08';'992273412'='2026-10-14' }
 $VENDAS_FROM = '2026-08-01'   # funil: so vendas com DT COMPRA a partir daqui
 $TAX = 1.1385
 # QUALIFICACAO (regra nova ago/2026 do cliente): DESqualificado = fatura < 100 mil (col H "faturamento mensal")
@@ -144,6 +143,45 @@ function BrDate($s){ $s=Norm $s; if($s -match '^(\d{2})/(\d{2})/(\d{4})'){ retur
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $o=GetDay $d; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
 
+# --- AUTO-DESCOBRIR as abas de evento (nome tipo "14 OUT"/"02 Fev") do htmlview; data pelo nome da aba ---
+$mesMap=@{fev='02';mar='03';abr='04';mai='05';jun='06';jul='07';ago='08';set='09';out='10';nov='11';dez='12'}
+$VENDAS_GIDS=@(); $VENDAS_EVDATE=@{}
+try{
+  $wcH=New-Object System.Net.WebClient; $wcH.Encoding=[Text.Encoding]::UTF8
+  $htmlV=$wcH.DownloadString("https://docs.google.com/spreadsheets/d/$VENDAS_ID/htmlview")
+  foreach($mm in [regex]::Matches($htmlV,'name:\s*"((?:[^"\\]|\\.)*)",[^}]*?gid:\s*"(\d+)"')){
+    $nm=$mm.Groups[1].Value; $gid=$mm.Groups[2].Value
+    if($nm -match '(?i)^\s*(\d{1,2})\s*(fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)'){
+      $VENDAS_GIDS+=$gid; $VENDAS_EVDATE[$gid]=('2026-{0}-{1:d2}' -f $mesMap[$Matches[2].ToLower()],[int]$Matches[1]) } }
+}catch{}
+if($VENDAS_GIDS.Count -lt 10){ $VENDAS_GIDS=$VENDAS_GIDS_FB; $VENDAS_EVDATE=$VENDAS_EVDATE_FB }   # fallback se a descoberta falhar
+
+# --- linhas VERMELHAS (fill FF0000) na planilha de vendas = NAO contabilizar (marcacao do comercial) ---
+# gviz/CSV nao traz cor -> baixar XLSX (workbook inteiro), achar as linhas com preenchimento FFFF0000 e
+# guardar os e-mails. Resiliente: se falhar, $vendaRed fica vazio (nao exclui ninguem).
+$vendaRed=@{}
+try{
+  $wcX=New-Object System.Net.WebClient; $xlsx=Join-Path $dataDir 'vendas.xlsx'; $wcX.DownloadFile("https://docs.google.com/spreadsheets/d/$VENDAS_ID/export?format=xlsx",$xlsx)
+  $xdir=Join-Path $dataDir 'vendas_x'; if(Test-Path $xdir){Remove-Item $xdir -Recurse -Force}
+  Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($xlsx,$xdir)
+  $stylesX=[xml](Get-Content "$xdir\xl\styles.xml" -Raw -Encoding UTF8)
+  $xfFill=@(); foreach($xf in $stylesX.styleSheet.cellXfs.xf){ $xfFill+=[int]$xf.fillId }
+  $redIds=@{}; $fi=0; foreach($f in $stylesX.styleSheet.fills.fill){ $rgb=''; if($f.patternFill.fgColor){$rgb=$f.patternFill.fgColor.rgb}; if($rgb -eq 'FFFF0000'){$redIds[$fi]=1}; $fi++ }
+  $ssX=@(); if(Test-Path "$xdir\xl\sharedStrings.xml"){ $sxX=[xml](Get-Content "$xdir\xl\sharedStrings.xml" -Raw -Encoding UTF8); foreach($si in $sxX.sst.si){ $t=''; if($si.t){ if($si.t.'#text'){$t=$si.t.'#text'}else{$t=[string]$si.t} } elseif($si.r){ $t=($si.r|ForEach-Object{[string]$_.t}) -join '' }; $ssX+=$t } }
+  if($redIds.Count -gt 0){
+    $redXf=@(); for($s=0;$s -lt $xfFill.Count;$s++){ if($redIds.ContainsKey($xfFill[$s])){ $redXf+=$s } }
+    $redPat='s="(' + (($redXf) -join '|') + ')"'   # pre-filtro rapido: so parsear abas que TEM celula vermelha
+    foreach($shf in (Get-ChildItem "$xdir\xl\worksheets" -Filter 'sheet*.xml')){
+      $raw=Get-Content $shf.FullName -Raw -Encoding UTF8
+      if($redXf.Count -eq 0 -or $raw -notmatch $redPat){ continue }
+      $wsX=[xml]$raw
+      foreach($row in $wsX.worksheet.sheetData.row){ $isRed=$false; $em=''
+        foreach($c in $row.c){ $s=0; if($c.s){$s=[int]$c.s}; if($redIds.ContainsKey($xfFill[$s])){$isRed=$true}
+          $val=''; if($c.t -eq 's'){ if($c.v -ne $null){$val=$ssX[[int]$c.v]} } elseif($c.v -ne $null){$val=[string]$c.v}; if($val -match '@'){$em=($val -replace [char]0x200b,'').Trim().ToLower()} }
+        if($isRed -and $em -match '@'){ $vendaRed[$em]=1 } } } }
+}catch{}
+Write-Host ("VENDAS: {0} abas de evento | {1} linhas vermelhas excluidas" -f $VENDAS_GIDS.Count,$vendaRed.Count)
+
 # ---- VENDAS EXTRAS (planilha de controle Maira) — vendas que a kiwify NAO tem -------------------
 # So VALOR>0 = venda de verdade (linhas sem valor = lead em negociacao). DEDUP por e-mail e EXCLUI
 # quem ja esta paga na kiwify (garante: NENHUMA venda contada 2x). Monta 1 lista deduplicada
@@ -157,7 +195,7 @@ foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K
 # cabecalho caem fora sozinhas (nao tem @ nem valor). Consolida por e-mail entre abas (preenche o que faltar).
 $reMoney='^\d{1,3}(\.\d{3})*,\d{2}$'; $reEvDate='^(\d{1,2})/(\d{1,2})/\d{2,4}$'; $reBuyDate='^(\d{1,2})/(\d{1,2})$'
 $kiwPaidEmails=@{}; foreach($r in $kd){ if((Norm $r[$K_STAT]) -eq 'paid'){ $e=(Norm $r[$K_EMAIL]).ToLower(); if($e -match '@'){ $kiwPaidEmails[$e]=1 } } }
-$manualByEmail=[ordered]@{}
+$manualByEmail=[ordered]@{}; $manEvByEmail=[ordered]@{}   # manEvByEmail = col G (DATA COCKTAIL) por pessoa, AUTORITATIVO p/ a aba Datas (inclui kiwify remanejadas)
 foreach($vg in $VENDAS_GIDS){
   $vc=Join-Path $dataDir "venda_$vg.csv"
   try{ Get-Sheet $VENDAS_ID $vg $vc }catch{ continue }
@@ -169,9 +207,11 @@ foreach($vg in $VENDAS_GIDS){
     if($e -notmatch '@'){ continue }
     $val=0.0; foreach($cell in $row){ $c=((Norm $cell) -replace '[R$\s]',''); if($c -match $reMoney){ $val=[double]($c -replace '\.','' -replace ',','.'); break } }
     if($val -le 0){ continue }                       # sem VALOR = ainda nao e venda
-    if($kiwPaidEmails.ContainsKey($e)){ continue }   # ja paga na kiwify -> NAO duplica
+    if($vendaRed.ContainsKey($e)){ continue }         # linha VERMELHA (FF0000) = NAO contabilizar
     $evk=''; $sel=''; for($ci=0;$ci -lt $row.Count;$ci++){ $c=Norm $row[$ci]; if($c -match $reEvDate){ $evk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); if($ci+1 -lt $row.Count){ $sel=Norm $row[$ci+1] }; break } }
     if($evk -eq ''){ $evk=$tabEv }                   # fallback: data do evento da propria aba
+    $manEvByEmail[$e]=[pscustomobject]@{ev=$evk;val=$val}   # col G p/ Datas — ULTIMA aba vence (reschedule mais recente)
+    if($kiwPaidEmails.ContainsKey($e)){ continue }   # FUNIL: so nao-kiwify (senao duplica a venda)
     $dtk=''; foreach($cell in $row){ $c=Norm $cell; if($c -match $reBuyDate){ $dtk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); break } }
     if(-not $manualByEmail.Contains($e)){ $manualByEmail[$e]=[pscustomobject]@{email=$e;valor=$val;dtKey=$dtk;evKey=$evk;seller=$sel} }
     else{ $o=$manualByEmail[$e]; if($o.evKey -eq ''){$o.evKey=$evk}; if($o.dtKey -eq ''){$o.dtKey=$dtk}; if($o.seller -eq ''){$o.seller=$sel} } }   # consolida entre abas
@@ -506,19 +546,21 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
 # ===================================================================
 if($Mode -eq 'all' -or $Mode -eq 'datas'){
   $K_OFERTA=HdrIndex $kh 'Oferta'
-  $evMap=@{}   # chave = dateKey do evento -> {ev(label);dateKey;vendas;revenue}
-  $evSeen=@{}  # e-mail|evento -> 1 : uma pessoa conta 1 vaga por evento (a kiwify as vezes repete a linha)
-  foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $of=Norm $r[$K_OFERTA]; if($of -eq ''){continue}
-    $ev=$of; $ix=$ev.IndexOf(' - '); if($ix -ge 0){ $ev=$ev.Substring(0,$ix).Trim() }   # "Evento 07/04 - Convite especial" -> "Evento 07/04"
+  # Atribuicao por PESSOA (1 pessoa = 1 vaga): a coluna G "DATA COCKTAIL" do controle manual VENCE
+  # (pedido do cliente; resolve remanejamento — quem a kiwify marca num evento antigo mas o comercial
+  # moveu de data). A kiwify (Oferta) preenche SO quem NAO esta no controle manual. Vermelhas ja foram
+  # excluidas do manEvByEmail; excluo tambem da kiwify aqui.
+  $personEv=[ordered]@{}
+  foreach($e in $manEvByEmail.Keys){ $m=$manEvByEmail[$e]; if($m.ev -eq ''){continue}; $personEv[$e]=[pscustomobject]@{dk=$m.ev;rev=$m.val} }
+  foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $em=(Norm $r[$K_EMAIL]).ToLower(); if($em -notmatch '@'){continue}
+    if($vendaRed.ContainsKey($em)){continue}; if($personEv.Contains($em)){continue}   # col G ja decidiu essa pessoa
+    $of=Norm $r[$K_OFERTA]; if($of -eq ''){continue}; $ev=$of; $ix=$ev.IndexOf(' - '); if($ix -ge 0){ $ev=$ev.Substring(0,$ix).Trim() }
     $dk='9999-99-99'; if($ev -match '(\d{2})/(\d{2})'){ $dk="2026-$($Matches[2])-$($Matches[1])" }
-    $em=(Norm $r[$K_EMAIL]).ToLower(); if($em -ne ''){ $sk="$em|$dk"; if($evSeen.ContainsKey($sk)){ continue }; $evSeen[$sk]=1 }  # dedup mesma pessoa/mesmo evento
-    if(-not $evMap.ContainsKey($dk)){ $evMap[$dk]=[pscustomobject]@{ev=$ev;dateKey=$dk;vendas=0;revenue=0.0} }
-    $o=$evMap[$dk]; $o.vendas++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
-  # + vendas MANUAIS (planilha de controle) que a kiwify NAO tem — por DATA COCKTAIL. Ja sao deduplicadas
-  # e excluem quem esta na kiwify, entao NAO duplicam nenhuma venda. Enchem as vagas do evento certo.
-  foreach($x in $manualExtras){ $dk=$x.evKey; if($dk -eq ''){ continue }
-    if(-not $evMap.ContainsKey($dk)){ $lbl='Evento '+([datetime]::ParseExact($dk,'yyyy-MM-dd',$null)).ToString('dd/MM'); $evMap[$dk]=[pscustomobject]@{ev=$lbl;dateKey=$dk;vendas=0;revenue=0.0} }
-    $o=$evMap[$dk]; $o.vendas++; $o.revenue += $x.valor }
+    $personEv[$em]=[pscustomobject]@{dk=$dk;rev=(MoneyKiwify $r[$K_REV])} }
+  $evMap=@{}
+  foreach($e in $personEv.Keys){ $p=$personEv[$e]; $dk=$p.dk
+    if(-not $evMap.ContainsKey($dk)){ $lbl="Evento $dk"; try{ $lbl='Evento '+([datetime]::ParseExact($dk,'yyyy-MM-dd',$null)).ToString('dd/MM') }catch{}; $evMap[$dk]=[pscustomobject]@{ev=$lbl;dateKey=$dk;vendas=0;revenue=0.0} }
+    $o=$evMap[$dk]; $o.vendas++; $o.revenue += $p.rev }
   $evArr=@()
   foreach($e in $evMap.Values){ $evArr+=[pscustomobject]@{ev=$e.ev;dateKey=$e.dateKey;vendas=$e.vendas;revenue=[math]::Round($e.revenue,2)} }
   $evArr=@($evArr | Sort-Object dateKey)
