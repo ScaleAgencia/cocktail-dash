@@ -33,6 +33,10 @@ $VENDAS_ID   = '1NoRHqbeO9fVTacQgADIUvPMfdt0v5HBgtMr8m3v9858'
 # As abas de evento (1 por Cocktail) e a data de cada uma sao AUTO-DESCOBERTAS do htmlview logo antes do
 # parse (a planilha ganha abas novas toda semana; hardcodar CONGELA eventos futuros). Fallback embutido.
 $VENDAS_GIDS_FB = @('0','1144515540','688780550','981750885','1769268662','1189147493','877739094','2029680212','179128172','1136083474','454135515','365567641','992273412')
+# CORRECAO MANUAL de evento — quando a coluna G ficou com a data antiga mas o comercial confirmou o evento
+# certo (ex.: remanejada e esqueceu de trocar a col G). Sobrepoe a col G p/ estes e-mails. ⚠️ Quando o
+# comercial corrigir a col G na planilha, pode remover a linha daqui (fica redundante, nao atrapalha).
+$VENDA_EVFIX = @{ 'kayanedias@hotmail.com'='2026-10-20'; 'frann@frannstorari.com.br'='2026-10-20' }
 $VENDAS_EVDATE_FB = @{ '0'='2026-02-02';'1144515540'='2026-03-05';'688780550'='2026-04-07';'981750885'='2026-05-27';'1769268662'='2026-06-09';'1189147493'='2026-07-14';'877739094'='2026-07-21';'2029680212'='2026-07-30';'179128172'='2026-08-05';'1136083474'='2026-08-25';'454135515'='2026-09-01';'365567641'='2026-09-08';'992273412'='2026-10-14' }
 $VENDAS_FROM = '2026-08-01'   # funil: so vendas com DT COMPRA a partir daqui
 $TAX = 1.1385
@@ -216,6 +220,9 @@ foreach($vg in $VENDAS_GIDS){
     if(-not $manualByEmail.Contains($e)){ $manualByEmail[$e]=[pscustomobject]@{email=$e;valor=$val;dtKey=$dtk;evKey=$evk;seller=$sel} }
     else{ $o=$manualByEmail[$e]; if($o.evKey -eq ''){$o.evKey=$evk}; if($o.dtKey -eq ''){$o.dtKey=$dtk}; if($o.seller -eq ''){$o.seller=$sel} } }   # consolida entre abas
 }
+# aplica a CORRECAO MANUAL de evento (col G ficou com data antiga; comercial confirmou o certo)
+foreach($fe in $VENDA_EVFIX.Keys){ $fk=($fe -replace [char]0x200b,'').Trim().ToLower()
+  if($manEvByEmail.Contains($fk)){ $manEvByEmail[$fk].ev=$VENDA_EVFIX[$fe] } else { $manEvByEmail[$fk]=[pscustomobject]@{ev=$VENDA_EVFIX[$fe];val=4997.0} } }
 $manualExtras=@($manualByEmail.Values)   # 1 registro por pessoa (fora da kiwify), com evento + compra + vendedora
 # funil = so compras com data valida a partir de agosto (mesma regra de antes)
 $extras=@()
