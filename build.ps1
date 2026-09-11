@@ -120,6 +120,7 @@ $L_CONT=HdrIndex $lh 'utm_content'; $L_SRC=HdrIndex $lh 'utm_source'; $L_DESAFIO
 
 $K_STAT=HdrIndex $kh 'Status'; $K_EMAIL=HdrIndex $kh 'Email'; $K_DATE=HdrIndex $kh 'Data Simplificada'
 $K_REV=HdrLike $kh 'Total com acr*'; $K_SRC=HdrIndex $kh 'Tracking src'   # vendedora (comercial)
+$K_NOME=HdrLike $kh '*Cliente*'; if($K_NOME -lt 0){ $K_NOME=3 }   # nome da compradora na kiwify (p/ casar cancelamento por nome)
 # estudo das compradoras (padroes ASCII p/ nao quebrar no PS5.1)
 $L_VOCE=HdrLike $lh '*Voc*'                       # [5] "Você é…" (1o header com "Voc")
 $L_EQ=HdrLike $lh '*equipe*'                      # [6] tamanho da equipe
@@ -145,8 +146,7 @@ foreach($r in $ld){ $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){
 
 # DD/MM/YYYY -> YYYY-MM-DD
 function BrDate($s){ $s=Norm $s; if($s -match '^(\d{2})/(\d{2})/(\d{4})'){ return "$($Matches[3])-$($Matches[2])-$($Matches[1])" }; return '' }
-foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
-  $o=GetDay $d; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
+# (o loop de vendas kiwify -> daily foi movido p/ DEPOIS da exclusao de cancelados, mais abaixo)
 
 # --- AUTO-DESCOBRIR as abas de evento (nome tipo "14 OUT"/"02 Fev") do htmlview; data pelo nome da aba ---
 $mesMap=@{fev='02';mar='03';abr='04';mai='05';jun='06';jul='07';ago='08';set='09';out='10';nov='11';dez='12'}
@@ -161,11 +161,12 @@ try{
 }catch{}
 if($VENDAS_GIDS.Count -lt 10){ $VENDAS_GIDS=$VENDAS_GIDS_FB; $VENDAS_EVDATE=$VENDAS_EVDATE_FB }   # fallback se a descoberta falhar
 
-# --- linhas VERMELHAS (fill FF0000) na planilha de vendas = NAO contabilizar (marcacao do comercial) ---
-# gviz/CSV nao traz cor -> baixar XLSX (workbook inteiro), achar as linhas com preenchimento FFFF0000 e
-# guardar os e-mails. Resiliente: se falhar, $vendaRed fica vazio (nao exclui ninguem).
-$vendaRed=@{}
-try{
+# --- CANCELAMENTOS: quem o comercial MARCOU sai de TUDO (vaga + faturamento + venda), por e-mail E nome ---
+# Sinais: (a) linha VERMELHA (fill FF0000) no controle; (b) a aba "cancelado". gviz nao traz cor -> XLSX.
+# ⚠️ Cancelamento tem que ser MARCADO (vermelho ou aba "cancelado"), NAO apenas APAGADO — apagar a linha
+# fica identico a uma venda kiwify ainda nao lancada, sem como diferenciar. $vendaExclE=e-mails, $vendaExclN=nomes.
+$vendaExclE=@{}; $vendaExclN=@{}
+try{   # (a) linhas vermelhas (FF0000) via XLSX
   $wcX=New-Object System.Net.WebClient; $xlsx=Join-Path $dataDir 'vendas.xlsx'; $wcX.DownloadFile("https://docs.google.com/spreadsheets/d/$VENDAS_ID/export?format=xlsx",$xlsx)
   $xdir=Join-Path $dataDir 'vendas_x'; if(Test-Path $xdir){Remove-Item $xdir -Recurse -Force}
   Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($xlsx,$xdir)
@@ -183,9 +184,19 @@ try{
       foreach($row in $wsX.worksheet.sheetData.row){ $isRed=$false; $em=''
         foreach($c in $row.c){ $s=0; if($c.s){$s=[int]$c.s}; if($redIds.ContainsKey($xfFill[$s])){$isRed=$true}
           $val=''; if($c.t -eq 's'){ if($c.v -ne $null){$val=$ssX[[int]$c.v]} } elseif($c.v -ne $null){$val=[string]$c.v}; if($val -match '@'){$em=($val -replace [char]0x200b,'').Trim().ToLower()} }
-        if($isRed -and $em -match '@'){ $vendaRed[$em]=1 } } } }
+        if($isRed -and $em -match '@'){ $vendaExclE[$em]=1 } } } }
 }catch{}
-Write-Host ("VENDAS: {0} abas de evento | {1} linhas vermelhas excluidas" -f $VENDAS_GIDS.Count,$vendaRed.Count)
+try{   # (b) aba "cancelado" (gid 803943340): exclui por e-mail E nome
+  $cc=Join-Path $dataDir 'venda_cancel.csv'; Get-Sheet $VENDAS_ID '803943340' $cc
+  foreach($row in (Read-Csv $cc)){ $ce='';$cn=''; for($ci=0;$ci -lt $row.Count;$ci++){ $c=(Norm $row[$ci]).ToLower(); if($c -match '@'){ $ce=($c -split '[;,\s]')[0]; if($ci -gt 0){$cn=Norm $row[$ci-1]}; break } }
+    if($ce -match '@'){ $vendaExclE[$ce]=1; $ck=NameKey $cn; if($ck -match ' '){ $vendaExclN[$ck]=1 } } }
+}catch{}
+$vendaRed=$vendaExclE   # compat: o parse manual usa $vendaRed p/ pular
+Write-Host ("VENDAS: {0} abas | {1} e-mails + {2} nomes excluidos (vermelho+cancelado)" -f $VENDAS_GIDS.Count,$vendaExclE.Count,$vendaExclN.Count)
+# vendas kiwify -> daily (por dia), PULANDO cancelados (por e-mail e nome)
+foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $em=(Norm $r[$K_EMAIL]).ToLower()
+  if($vendaExclE.ContainsKey($em)){continue}; $nk=NameKey $r[$K_NOME]; if($nk -match ' ' -and $vendaExclN.ContainsKey($nk)){continue}
+  $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}; $o=GetDay $d; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV]) }
 
 # ---- VENDAS EXTRAS (planilha de controle Maira) — vendas que a kiwify NAO tem -------------------
 # So VALOR>0 = venda de verdade (linhas sem valor = lead em negociacao). DEDUP por e-mail e EXCLUI
@@ -199,7 +210,6 @@ Write-Host ("VENDAS: {0} abas de evento | {1} linhas vermelhas excluidas" -f $VE
 # EVENTO = celula dd/mm/AAAA (com ano); data da COMPRA = celula dd/mm (sem ano). Linhas de titulo/
 # cabecalho caem fora sozinhas (nao tem @ nem valor). Consolida por e-mail entre abas (preenche o que faltar).
 $reMoney='^\d{1,3}(\.\d{3})*,\d{2}$'; $reEvDate='^(\d{1,2})/(\d{1,2})/\d{2,4}$'; $reBuyDate='^(\d{1,2})/(\d{1,2})$'
-$K_NOME=HdrLike $kh '*Cliente*'; if($K_NOME -lt 0){ $K_NOME=3 }   # nome da compradora na kiwify
 $kiwPaidEmails=@{}; $kiwNames=@{}
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $e=(Norm $r[$K_EMAIL]).ToLower(); if($e -match '@'){ $kiwPaidEmails[$e]=1 }
   $nk=NameKey $r[$K_NOME]; if($nk -match ' '){ $kiwNames[$nk]=1 } }   # nomes p/ pegar a mesma pessoa com e-mail digitado diferente (typo)
@@ -215,7 +225,8 @@ foreach($vg in $VENDAS_GIDS){
     if($e -notmatch '@'){ continue }
     $val=0.0; foreach($cell in $row){ $c=((Norm $cell) -replace '[R$\s]',''); if($c -match $reMoney){ $val=[double]($c -replace '\.','' -replace ',','.'); break } }
     if($val -le 0){ continue }                       # sem VALOR = ainda nao e venda
-    if($vendaRed.ContainsKey($e)){ continue }         # linha VERMELHA (FF0000) = NAO contabilizar
+    if($vendaExclE.ContainsKey($e)){ continue }        # cancelado (vermelho/aba cancelado) por e-mail
+    $nmc=NameKey $nome; if($nmc -match ' ' -and $vendaExclN.ContainsKey($nmc)){ continue }   # ...ou por nome
     $evk=''; $sel=''; for($ci=0;$ci -lt $row.Count;$ci++){ $c=Norm $row[$ci]; if($c -match $reEvDate){ $evk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); if($ci+1 -lt $row.Count){ $sel=Norm $row[$ci+1] }; break } }
     if($evk -eq ''){ $evk=$tabEv }                   # fallback: data do evento da propria aba
     $manEvByEmail[$e]=[pscustomobject]@{ev=$evk;val=$val}   # col G p/ Datas — ULTIMA aba vence (reschedule mais recente)
@@ -248,7 +259,9 @@ $leadFirst=@{}
 foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); if($e -eq ''){continue}; $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){continue}
   if(-not $leadFirst.ContainsKey($e) -or $d -lt $leadFirst[$e].date){ $leadFirst[$e]=[pscustomobject]@{date=$d;fat=(Norm $r[$L_FAT])} } }
 $sellers=@{}
-foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
+foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}
+  $em=(Norm $r[$K_EMAIL]).ToLower(); if($vendaExclE.ContainsKey($em)){continue}; $nk=NameKey $r[$K_NOME]; if($nk -match ' ' -and $vendaExclN.ContainsKey($nk)){continue}   # cancelado sai
+  $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $sv=TitleName $r[$K_SRC]; if($SELLER_ALIAS.ContainsKey($sv)){ $sv=$SELLER_ALIAS[$sv] }; if($sv -eq ''){$sv='SEM_VENDEDORA'}
   $key="$d`u$sv"; if(-not $sellers.ContainsKey($key)){ $sellers[$key]=[pscustomobject]@{date=$d;seller=$sv;sales=0;revenue=0.0;daysSum=0;daysN=0;fat=@(0,0,0,0,0,0)} }
   $o=$sellers[$key]; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV])
@@ -295,6 +308,7 @@ $objBuyers=@{}
 function GetObjB($d,$b){ $key="$d`u$b"; if(-not $objBuyers.ContainsKey($key)){ $objBuyers[$key]=[pscustomobject]@{date=$d;bucket=$b;buyers=0} }; return $objBuyers[$key] }
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $e=(Norm $r[$K_EMAIL]).ToLower(); $rev=MoneyKiwify $r[$K_REV]
+  if($vendaExclE.ContainsKey($e)){continue}; $nk=NameKey $r[$K_NOME]; if($nk -match ' ' -and $vendaExclN.ContainsKey($nk)){continue}   # cancelado sai da arvore
   if($e -ne '' -and $leadByEmail.ContainsKey($e)){ $m=$leadByEmail[$e]
     $c=if($m.campaign){$m.campaign}else{'NAO_ATRIBUIDO'}; $s=if($m.adset){$m.adset}else{'NAO_ATRIBUIDO'}; $a=if($m.ad){$m.ad}else{'NAO_ATRIBUIDO'}
     $o=GetGrain $d $c $s $a
@@ -454,6 +468,7 @@ foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); if($e -eq ''){continue}; $
 $buyers=New-Object System.Collections.Generic.List[object]
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $pr=Norm $r[$K_DATE]; if($pr -notmatch '^\d{2}/\d{2}/\d{4}'){continue}
   $e=(Norm $r[$K_EMAIL]).ToLower(); if($e -eq '' -or -not $leadStudy.ContainsKey($e)){continue}
+  if($vendaExclE.ContainsKey($e)){continue}; $nkc=NameKey $r[$K_NOME]; if($nkc -match ' ' -and $vendaExclN.ContainsKey($nkc)){continue}   # cancelado fora do perfil
   $m=$leadStudy[$e]; $pd=[datetime]::ParseExact($pr.Substring(0,10),'dd/MM/yyyy',$null); $lead=[datetime]::ParseExact($m.date,'yyyy-MM-dd',$null)
   $buyers.Add([pscustomobject]@{days=($pd-$lead).Days;fat=$m.fat;voce=$m.voce;eq=$m.eq;freq=$m.freq;intent=$m.intent;desafio=$m.desafio;rev=(MoneyKiwify $r[$K_REV])}) }
 $nB=$buyers.Count
@@ -538,8 +553,9 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
   $APICE_TICKET=150000
   $kByE=@{}; $kByN=@{}  # compradoras do Cocktail (kiwify paid): email/nome(Cliente) -> data da compra
   foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
-    $e=(Norm $r[$K_EMAIL]).ToLower(); if($e -ne '' -and -not $kByE.ContainsKey($e)){$kByE[$e]=$d}
-    $nm=NameKey $r[3]; if($nm -match ' ' -and -not $kByN.ContainsKey($nm)){$kByN[$nm]=$d} }
+    $e=(Norm $r[$K_EMAIL]).ToLower(); if($vendaExclE.ContainsKey($e)){continue}; $nm=NameKey $r[$K_NOME]; if($nm -match ' ' -and $vendaExclN.ContainsKey($nm)){continue}   # cancelado nao ascende
+    if($e -ne '' -and -not $kByE.ContainsKey($e)){$kByE[$e]=$d}
+    if($nm -match ' ' -and -not $kByN.ContainsKey($nm)){$kByN[$nm]=$d} }
   $ascDaily=@{}; $ascE=0; $ascN=0
   foreach($w in $apList){ $d=$null
     if($kByE.ContainsKey($w.email)){$d=$kByE[$w.email];$ascE++}
