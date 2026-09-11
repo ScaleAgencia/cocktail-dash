@@ -80,6 +80,7 @@ function HdrLike($hdr,$pat){ for($i=0;$i -lt $hdr.Count;$i++){ if((Norm $hdr[$i]
 function Deaccent($s){ if($null -eq $s){return ''}; $s=$s.Normalize([Text.NormalizationForm]::FormD); $sb=New-Object Text.StringBuilder
   foreach($c in $s.ToCharArray()){ if([Globalization.CharUnicodeInfo]::GetUnicodeCategory($c) -ne [Globalization.UnicodeCategory]::NonSpacingMark){ [void]$sb.Append($c) } }
   return $sb.ToString().ToLower() }
+function NameKey($s){ return ((Deaccent (Norm $s)) -replace '\s+',' ').Trim() }   # nome normalizado p/ casar apesar de acento/caixa/typo de e-mail
 $OBJ_BUCKETS = @(
   @('Equipe & Pessoas',       @('equipe','pessoa','mao de obra','colaborador','funcionario','contrat','lider','recursos humanos')),
   @('Delegacao & Escala',     @('deleg','escal','cresc','expand','expans','sair da operac','depend','sozinh','dono faz','centraliz','sobrecarg','estagn')),
@@ -198,7 +199,10 @@ Write-Host ("VENDAS: {0} abas de evento | {1} linhas vermelhas excluidas" -f $VE
 # EVENTO = celula dd/mm/AAAA (com ano); data da COMPRA = celula dd/mm (sem ano). Linhas de titulo/
 # cabecalho caem fora sozinhas (nao tem @ nem valor). Consolida por e-mail entre abas (preenche o que faltar).
 $reMoney='^\d{1,3}(\.\d{3})*,\d{2}$'; $reEvDate='^(\d{1,2})/(\d{1,2})/\d{2,4}$'; $reBuyDate='^(\d{1,2})/(\d{1,2})$'
-$kiwPaidEmails=@{}; foreach($r in $kd){ if((Norm $r[$K_STAT]) -eq 'paid'){ $e=(Norm $r[$K_EMAIL]).ToLower(); if($e -match '@'){ $kiwPaidEmails[$e]=1 } } }
+$K_NOME=HdrLike $kh '*Cliente*'; if($K_NOME -lt 0){ $K_NOME=3 }   # nome da compradora na kiwify
+$kiwPaidEmails=@{}; $kiwNames=@{}
+foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $e=(Norm $r[$K_EMAIL]).ToLower(); if($e -match '@'){ $kiwPaidEmails[$e]=1 }
+  $nk=NameKey $r[$K_NOME]; if($nk -match ' '){ $kiwNames[$nk]=1 } }   # nomes p/ pegar a mesma pessoa com e-mail digitado diferente (typo)
 $manualByEmail=[ordered]@{}; $manEvByEmail=[ordered]@{}   # manEvByEmail = col G (DATA COCKTAIL) por pessoa, AUTORITATIVO p/ a aba Datas (inclui kiwify remanejadas)
 foreach($vg in $VENDAS_GIDS){
   $vc=Join-Path $dataDir "venda_$vg.csv"
@@ -207,7 +211,7 @@ foreach($vg in $VENDAS_GIDS){
   $vv=Read-Csv $vc; if($vv.Count -lt 1){ continue }
   $tabEv=''; if($VENDAS_EVDATE.ContainsKey($vg)){ $tabEv=$VENDAS_EVDATE[$vg] }
   foreach($row in $vv){
-    $e=''; foreach($cell in $row){ $c=(Norm $cell).ToLower(); if($c -match '@'){ $e=($c -split '[;,\s]')[0]; break } }
+    $e=''; $nome=''; for($ci=0;$ci -lt $row.Count;$ci++){ $c=(Norm $row[$ci]).ToLower(); if($c -match '@'){ $e=($c -split '[;,\s]')[0]; if($ci -gt 0){ $nome=Norm $row[$ci-1] }; break } }
     if($e -notmatch '@'){ continue }
     $val=0.0; foreach($cell in $row){ $c=((Norm $cell) -replace '[R$\s]',''); if($c -match $reMoney){ $val=[double]($c -replace '\.','' -replace ',','.'); break } }
     if($val -le 0){ continue }                       # sem VALOR = ainda nao e venda
@@ -215,7 +219,8 @@ foreach($vg in $VENDAS_GIDS){
     $evk=''; $sel=''; for($ci=0;$ci -lt $row.Count;$ci++){ $c=Norm $row[$ci]; if($c -match $reEvDate){ $evk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); if($ci+1 -lt $row.Count){ $sel=Norm $row[$ci+1] }; break } }
     if($evk -eq ''){ $evk=$tabEv }                   # fallback: data do evento da propria aba
     $manEvByEmail[$e]=[pscustomobject]@{ev=$evk;val=$val}   # col G p/ Datas — ULTIMA aba vence (reschedule mais recente)
-    if($kiwPaidEmails.ContainsKey($e)){ continue }   # FUNIL: so nao-kiwify (senao duplica a venda)
+    if($kiwPaidEmails.ContainsKey($e)){ continue }   # FUNIL: so nao-kiwify por e-mail
+    $nk=NameKey $nome; if($nk -match ' ' -and $kiwNames.ContainsKey($nk)){ continue }   # ...E nao-kiwify por NOME (mesma pessoa c/ e-mail digitado diferente/typo) -> nao duplica a venda no funil/ROAS
     $dtk=''; foreach($cell in $row){ $c=Norm $cell; if($c -match $reBuyDate){ $dtk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); break } }
     if(-not $manualByEmail.Contains($e)){ $manualByEmail[$e]=[pscustomobject]@{email=$e;valor=$val;dtKey=$dtk;evKey=$evk;seller=$sel} }
     else{ $o=$manualByEmail[$e]; if($o.evKey -eq ''){$o.evKey=$evk}; if($o.dtKey -eq ''){$o.dtKey=$dtk}; if($o.seller -eq ''){$o.seller=$sel} } }   # consolida entre abas
@@ -557,13 +562,12 @@ if($Mode -eq 'all' -or $Mode -eq 'datas'){
   # (pedido do cliente; resolve remanejamento — quem a kiwify marca num evento antigo mas o comercial
   # moveu de data). A kiwify (Oferta) preenche SO quem NAO esta no controle manual. Vermelhas ja foram
   # excluidas do manEvByEmail; excluo tambem da kiwify aqui.
+  # ⚠️ VAGAS = SÓ o controle do COMERCIAL (planilha manual), pela coluna G "DATA COCKTAIL", tirando as
+  # vermelhas. Decisão do cliente (11/09): as meninas preenchem as vagas certinho, então a aba Datas
+  # espelha o controle delas — NÃO adiciona vendas que só estão na kiwify (essas contam no funil/ROAS,
+  # mas só viram "vaga" quando o comercial lançar). Evita divergência com a contagem do time.
   $personEv=[ordered]@{}
   foreach($e in $manEvByEmail.Keys){ $m=$manEvByEmail[$e]; if($m.ev -eq ''){continue}; $personEv[$e]=[pscustomobject]@{dk=$m.ev;rev=$m.val} }
-  foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $em=(Norm $r[$K_EMAIL]).ToLower(); if($em -notmatch '@'){continue}
-    if($vendaRed.ContainsKey($em)){continue}; if($personEv.Contains($em)){continue}   # col G ja decidiu essa pessoa
-    $of=Norm $r[$K_OFERTA]; if($of -eq ''){continue}; $ev=$of; $ix=$ev.IndexOf(' - '); if($ix -ge 0){ $ev=$ev.Substring(0,$ix).Trim() }
-    $dk='9999-99-99'; if($ev -match '(\d{2})/(\d{2})'){ $dk="2026-$($Matches[2])-$($Matches[1])" }
-    $personEv[$em]=[pscustomobject]@{dk=$dk;rev=(MoneyKiwify $r[$K_REV])} }
   $evMap=@{}
   foreach($e in $personEv.Keys){ $p=$personEv[$e]; $dk=$p.dk
     if(-not $evMap.ContainsKey($dk)){ $lbl="Evento $dk"; try{ $lbl='Evento '+([datetime]::ParseExact($dk,'yyyy-MM-dd',$null)).ToString('dd/MM') }catch{}; $evMap[$dk]=[pscustomobject]@{ev=$lbl;dateKey=$dk;vendas=0;revenue=0.0} }
