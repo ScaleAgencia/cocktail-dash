@@ -22,7 +22,7 @@ $dataDir = Join-Path $root 'data'
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 # ---- Sources -------------------------------------------------------
-$QUERIES_ID = '1RJC_VqNbRF8Xir_jQQ4KBdA0Bh9u4AUiDQPxr1sPEHU'; $QUERIES_GID = '1160142252'
+$QUERIES_ID = '1S_5PYUzmHPfMY9kRxwf89cWXw0dHoN708OMnlLZnpWs'; $QUERIES_GID = '1160142252'
 $MASTER_ID  = '1WuETdVje43yvMfyQDHO1PObXj_G9G-t6JjG6q987Z4o'
 $LEADS_GID  = '603619749'
 $KIWIFY_GID = '1987730935'
