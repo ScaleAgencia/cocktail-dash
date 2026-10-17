@@ -178,12 +178,34 @@ function buildTree(start,end){
   return arr;
 }
 function treeRow(node,level,hasKids){
-  const m=node.m, cplqlf=safe(m.spend,m.qlf), cac=safe(m.spend,m.sales), ctr=safe(m.clicks,m.impr)*100, txq=safe(m.qlf,m.leads)*100;
+  const m=node.m;
+  const cpm=safe(m.spend,m.impr)*1000, ctr=safe(m.clicks,m.impr)*100, cpc=safe(m.spend,m.clicks);
+  const connect=safe(m.lpv,m.clicks)*100, convlp=safe(m.leads,m.lpv)*100, cpl=safe(m.spend,m.leads);
+  const txq=safe(m.qlf,m.leads)*100, cplqlf=safe(m.spend,m.qlf), txv=safe(m.sales,m.qlf)*100;
+  const cac=safe(m.spend,m.sales), roas=safe(m.revenue,m.spend), ticket=safe(m.revenue,m.sales);
   const car = hasKids ? `<span class="caret">${expanded.has(node.key)?'▾':'▸'}</span>` : '<span class="caret0"></span>';
   return `<tr class="trow lvl${level}" data-key="${esc(node.key)}" data-k="${hasKids?1:0}">
     <td class="tlabel" style="padding-left:${8+level*22}px" title="${esc(node.label)}">${car}${esc(node.label)}</td>
-    <td>${money(m.spend)}</td><td>${int(m.leads)}</td><td>${int(m.qlf)}</td><td>${pct(txq)}</td>
-    <td>${cplPill(cplqlf,m.qlf)}</td><td>${int(m.sales)}</td><td>${m.sales>0?money(cac):'—'}</td><td>${pct(ctr)}</td></tr>`;
+    <td>${money(m.spend)}</td>
+    <td>${int(m.impr)}</td>
+    <td>${m.impr>0?money(cpm):'—'}</td>
+    <td>${m.impr>0?pct(ctr):'—'}</td>
+    <td>${int(m.clicks)}</td>
+    <td>${m.clicks>0?money(cpc):'—'}</td>
+    <td>${m.clicks>0?pct(connect):'—'}</td>
+    <td>${int(m.lpv)}</td>
+    <td>${m.lpv>0?pct(convlp):'—'}</td>
+    <td>${int(m.leads)}</td>
+    <td>${m.leads>0?money(cpl):'—'}</td>
+    <td>${m.leads>0?pct(txq):'—'}</td>
+    <td>${int(m.qlf)}</td>
+    <td>${cplPill(cplqlf,m.qlf)}</td>
+    <td>${m.qlf>0?pct(txv):'—'}</td>
+    <td>${int(m.sales)}</td>
+    <td>${m.sales>0?money(cac):'—'}</td>
+    <td>${money(m.revenue)}</td>
+    <td>${m.spend>0?fmtRoas(roas):'—'}</td>
+    <td>${m.sales>0?money(ticket):'—'}</td></tr>`;
 }
 function cplPill(v,qlf){
   if(qlf<=0) return '<span class="pill" style="background:#aab4bf">—</span>';
@@ -192,7 +214,7 @@ function cplPill(v,qlf){
 }
 function renderTable(){
   const tree=buildTree(state.start,state.end);
-  document.querySelector('#optTable thead').innerHTML='<tr><th class="tlabel">Campanha › Conjunto › Anúncio</th><th>Gasto</th><th>Leads</th><th>QLF</th><th>%Qualif</th><th>CPL QLF</th><th>Vendas</th><th>CAC</th><th>CTR</th></tr>';
+  document.querySelector('#optTable thead').innerHTML='<tr><th class="tlabel">Campanha › Conjunto › Anúncio</th><th>Gasto</th><th>Impressões</th><th>CPM</th><th>CTR</th><th>Cliques</th><th>CPC</th><th>Connect</th><th>Page Views</th><th>Conv. LP</th><th>Leads</th><th>CPL</th><th>% Qualif</th><th>QLF</th><th>CPL QLF</th><th>Conv. Venda</th><th>Vendas</th><th>CAC</th><th>Receita</th><th>ROAS</th><th>Ticket</th></tr>';
   let rows='';
   for(const c of tree){ rows+=treeRow(c,0,c.kidsArr.length>0);
     if(expanded.has(c.key)) for(const a of c.kidsArr){ rows+=treeRow(a,1,a.kidsArr.length>0);

@@ -83,6 +83,15 @@ thead th:first-child{text-align:left}
 thead th.sorted::after{content:" ▾";color:var(--blue2)}
 thead th.sorted.asc::after{content:" ▴"}
 tbody td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+tbody td,thead th{font-variant-numeric:tabular-nums}
+/* Otimização: nome (1ª coluna) congelado + demais métricas com scroll horizontal.
+   border-collapse:separate é necessário p/ o sticky funcionar em célula de tabela (Chrome). */
+#optTable{border-collapse:separate;border-spacing:0}
+#optTable td.tlabel,#optTable th.tlabel{position:sticky;left:0;z-index:2;max-width:260px;min-width:190px;box-shadow:inset -1px 0 0 var(--line)}
+#optTable thead th.tlabel{z-index:3;background:#f4f7fa}
+#optTable .trow.lvl0 td.tlabel{background:#fff}
+#optTable .trow.lvl1 td.tlabel{background:#f6f9fc}
+#optTable .trow.lvl2 td.tlabel{background:#fcfdfe}
 tbody td:first-child{text-align:left;max-width:360px;overflow:hidden;text-overflow:ellipsis;font-weight:600}
 tbody tr:hover{background:#f7fafd}
 .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-weight:700;color:#fff;font-size:11.5px}
