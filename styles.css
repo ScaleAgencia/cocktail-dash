@@ -87,7 +87,7 @@ tbody td,thead th{font-variant-numeric:tabular-nums}
 /* Otimização: nome (1ª coluna) congelado + demais métricas com scroll horizontal.
    border-collapse:separate é necessário p/ o sticky funcionar em célula de tabela (Chrome). */
 #optTable{border-collapse:separate;border-spacing:0}
-#optTable td.tlabel,#optTable th.tlabel{position:sticky;left:0;z-index:2;max-width:260px;min-width:190px;box-shadow:inset -1px 0 0 var(--line)}
+#optTable td.tlabel,#optTable th.tlabel{position:sticky;left:0;z-index:2;width:340px;min-width:300px;max-width:340px;white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip;vertical-align:top;line-height:1.35;box-shadow:inset -1px 0 0 var(--line)}
 #optTable thead th.tlabel{z-index:3;background:#f4f7fa}
 #optTable .trow.lvl0 td.tlabel{background:#fff}
 #optTable .trow.lvl1 td.tlabel{background:#f6f9fc}
@@ -98,7 +98,7 @@ tbody tr:hover{background:#f7fafd}
 .sub{color:var(--muted);font-weight:400;font-size:11px}
 /* árvore de otimização (campanha > conjunto > anúncio) */
 .trow[data-k="1"]{cursor:pointer}
-.trow td.tlabel{text-align:left;max-width:380px;overflow:hidden;text-overflow:ellipsis}
+.trow td.tlabel{text-align:left}
 .trow.lvl0 td{border-top:2px solid #e8edf2}
 .trow.lvl0 td.tlabel{font-weight:800}
 .trow.lvl1{background:#f6f9fc}
