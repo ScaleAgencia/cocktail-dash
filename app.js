@@ -882,8 +882,8 @@ function init(){
   document.getElementById('qualNote').textContent = 'Qualificado = '+D.qualification;
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
-  const PAGES=['funnel','datas','obj','insights','comercial','bestads','tempo','perfil','apice','ascensao'];
-  const NOCTRL=['insights','tempo','perfil','apice','datas']; // abas de base completa (sem seletor de período); comercial, bestads e ascensao usam o seletor
+  const PAGES=['funnel','sd','datas','obj','insights','comercial','bestads','tempo','perfil','apice','ascensao'];
+  const NOCTRL=['insights','tempo','perfil','apice','datas']; // abas de base completa (sem seletor de período); comercial, bestads, sd e ascensao usam o seletor
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
     const pg=b.dataset.page;
@@ -908,5 +908,6 @@ function init(){
   else if(hash.includes('ascens')){ document.querySelector('.pagebtn[data-page="ascensao"]').click(); }
   else if(hash.includes('datas')){ document.querySelector('.pagebtn[data-page="datas"]').click(); }
   else if(hash.includes('bestads')||hash.includes('melhores')||hash.includes('anuncio')){ document.querySelector('.pagebtn[data-page="bestads"]').click(); }
+  else if(hash.includes('saude')||hash==='#sd'){ document.querySelector('.pagebtn[data-page="sd"]').click(); }
 }
 init();

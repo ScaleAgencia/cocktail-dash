@@ -24,6 +24,7 @@
 
   <nav class="pagenav">
     <button class="pagebtn active" data-page="funnel">📊 Funil</button>
+    <button class="pagebtn" data-page="sd">🩺 SD</button>
     <button class="pagebtn" data-page="datas">📅 Datas</button>
     <button class="pagebtn" data-page="obj">🧠 Objeções</button>
     <button class="pagebtn" data-page="insights">💡 Insights</button>
@@ -46,8 +47,6 @@
   </section>
 
   <div id="pageFunnel">
-  <div class="card health" id="healthCard"></div>
-
   <section class="rev-block" id="revBlock">
     <div class="rev-card rev-inv">
       <div class="rev-top"><span class="rev-ic">💸</span><span class="rev-lbl">Investimento <span class="sub">com imposto</span></span></div>
@@ -126,6 +125,10 @@
     </div>
   </section>
   </div><!--/pageFunnel-->
+
+  <div id="pageSd" hidden>
+    <div class="card health" id="healthCard"></div>
+  </div><!--/pageSd-->
 
   <div id="pageObj" hidden>
     <div class="card">
