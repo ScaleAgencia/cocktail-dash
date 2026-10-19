@@ -44,6 +44,14 @@ $TAX = 1.1385
 # OU e CLT (col F "Voce e..."). TUDO ALEM disso e qualificado (default = qualificado, robusto a novas
 # opcoes de resposta >=100k que a planilha venha a criar). LOW_FAT = todas as faixas < 100 mil, grafias antiga+nova.
 $LOW_FAT = @('Menos de R$ 5 mil','Entre R$ 5 mil e R$ 10 mil','Entre R$ 10 mil e R$ 50 mil','Entre R$ 50 mil e R$ 100 mil','Menos de 100mil')
+# ---- FORMS (Lead Form NATIVO do Meta) --------------------------------
+# Campanhas com a TAG "forms" (um segmento "| forms" no nome) cruzam com ESTA planilha — export do
+# Lead Form, que ja traz campaign_name/adset_name/ad_name iguaizinhos aos das queries (verificado
+# byte-a-byte), entao os leads caem no MESMO grain do gasto. As DEMAIS campanhas seguem na planilha
+# de leads de sempre (a antiga tem 0 lead "forms", sem risco de dobra). Qualificacao = MESMA regra
+# (<100k ou CLT desqualifica), mas aqui a resposta vem como "menos_de_100_mil" (minuscula/underscore).
+$FORMS_ID = '1HuURt5bclbK2lUhbnDWvYmlwQowif-gFoVl_HV3Ukws'; $FORMS_GID = '0'
+$FORMS_LOW_FAT = @('menos de 100 mil')   # faixas <100k no formato do forms (deaccent + espaco); extensivel
 
 function Get-Sheet($id,$gid,$out){
   $url = "https://docs.google.com/spreadsheets/d/$id/gviz/tq?tqx=out:csv&gid=$gid"
@@ -81,6 +89,20 @@ function Deaccent($s){ if($null -eq $s){return ''}; $s=$s.Normalize([Text.Normal
   foreach($c in $s.ToCharArray()){ if([Globalization.CharUnicodeInfo]::GetUnicodeCategory($c) -ne [Globalization.UnicodeCategory]::NonSpacingMark){ [void]$sb.Append($c) } }
   return $sb.ToString().ToLower() }
 function NameKey($s){ return ((Deaccent (Norm $s)) -replace '\s+',' ').Trim() }   # nome normalizado p/ casar apesar de acento/caixa/typo de e-mail
+# ---- FORMS helpers ----
+# campanha TEM a tag "forms" quando algum segmento "| ... |" do nome e exatamente "forms"
+function IsFormsCamp($name){ foreach($seg in ($name -split '\|')){ if((Deaccent (Norm $seg)) -eq 'forms'){ return $true } }; return $false }
+# faturamento do forms normalizado: deaccent + (_/espaco -> 1 espaco) + lower  -> "menos de 100 mil"
+function FatNormForms($s){ return (((Deaccent (Norm $s)) -replace '[_\s]+',' ').Trim()) }
+# qualificado (forms) = MESMA regra: tem faturamento, NAO e CLT e NAO esta nas faixas <100k
+function IsQualForms($fat,$voce){ $f=FatNormForms $fat; $v=Deaccent (Norm $voce)
+  if($f -eq ''){ return $false }
+  if($v -match 'clt' -or $v -match 'funcionari' -or $v -match 'assalariad'){ return $false }
+  if($script:FORMS_LOW_FAT -contains $f){ return $false }
+  if($f -match 'menos' -and $f -match '100'){ return $false }   # "menos de 100 mil" (rede de seguranca)
+  return $true }
+# finder de cabecalho do forms (headers com underscore/acento/"?"): deaccent + (_?-> espaco) + -like
+function FHdr($hdr,$pat){ for($i=0;$i -lt $hdr.Count;$i++){ $h=(((Deaccent (Norm $hdr[$i])) -replace '[_\?]+',' ').Trim()); if($h -like $pat){ return $i } }; return -1 }
 $OBJ_BUCKETS = @(
   @('Equipe & Pessoas',       @('equipe','pessoa','mao de obra','colaborador','funcionario','contrat','lider','recursos humanos')),
   @('Delegacao & Escala',     @('deleg','escal','cresc','expand','expans','sair da operac','depend','sozinh','dono faz','centraliz','sobrecarg','estagn')),
@@ -101,13 +123,16 @@ function Bucket($txt){ $t=Deaccent (Norm $txt); if($t -eq ''){return 'Outros'}
 
 Write-Host "Downloading sheets..."
 $qCsv=Join-Path $dataDir 'queries.csv'; $lCsv=Join-Path $dataDir 'leads.csv'; $kCsv=Join-Path $dataDir 'kiwify.csv'
+$fCsv=Join-Path $dataDir 'forms.csv'
 Get-Sheet $QUERIES_ID $QUERIES_GID $qCsv
 Get-Sheet $MASTER_ID  $LEADS_GID   $lCsv
 Get-Sheet $MASTER_ID  $KIWIFY_GID  $kCsv
+Get-Sheet $FORMS_ID   $FORMS_GID   $fCsv
 
 $q = Read-Csv $qCsv;  $qh=$q[0]; $qd=$q[1..($q.Count-1)]
 $l = Read-Csv $lCsv;  $lh=$l[0]; $ld=$l[1..($l.Count-1)]
 $k = Read-Csv $kCsv;  $kh=$k[0]; $kd=$k[1..($k.Count-1)]
+$ff = @(Read-Csv $fCsv); $ffh = $ff[0]; $ffd = @(); if($ff.Count -gt 1){ $ffd = $ff[1..($ff.Count-1)] }   # @() + guarda: aba vazia nao quebra (bug conhecido Read-Csv)
 
 # ---- column indices ------------------------------------------------
 $Q_DAY=HdrIndex $qh 'Day'; $Q_CAMP=HdrIndex $qh 'Campaign Name'; $Q_SET=HdrIndex $qh 'Ad Set Name'
@@ -121,6 +146,15 @@ $L_CONT=HdrIndex $lh 'utm_content'; $L_SRC=HdrIndex $lh 'utm_source'; $L_DESAFIO
 $K_STAT=HdrIndex $kh 'Status'; $K_EMAIL=HdrIndex $kh 'Email'; $K_DATE=HdrIndex $kh 'Data Simplificada'
 $K_REV=HdrLike $kh 'Total com acr*'; $K_SRC=HdrIndex $kh 'Tracking src'   # vendedora (comercial)
 $K_NOME=HdrLike $kh '*Cliente*'; if($K_NOME -lt 0){ $K_NOME=3 }   # nome da compradora na kiwify (p/ casar cancelamento por nome)
+
+# ---- forms (Lead Form): indices por NOME (robusto a reordenacao) com fallback na posicao conhecida ----
+$FF_DATE=FHdr $ffh '*created time*'; if($FF_DATE -lt 0){ $FF_DATE=1 }
+$FF_CAMP=FHdr $ffh '*campaign name*'; if($FF_CAMP -lt 0){ $FF_CAMP=7 }
+$FF_SET =FHdr $ffh '*adset name*';   if($FF_SET  -lt 0){ $FF_SET=5 }
+$FF_AD  =FHdr $ffh '*ad name*';      if($FF_AD   -lt 0){ $FF_AD=3 }
+$FF_EMAIL=FHdr $ffh '*email*';       if($FF_EMAIL -lt 0){ $FF_EMAIL=23 }
+$FF_FAT =FHdr $ffh '*faturamento mensal*'; if($FF_FAT -lt 0){ $FF_FAT=15 }   # "qual e o seu faturamento mensal?" (NAO o total 2025/2026)
+$FF_VOCE=FHdr $ffh 'voce e*';        if($FF_VOCE -lt 0){ $FF_VOCE=12 }       # "voce e..." (empresaria/CLT etc.)
 # estudo das compradoras (padroes ASCII p/ nao quebrar no PS5.1)
 $L_VOCE=HdrLike $lh '*Voc*'                       # [5] "Você é…" (1o header com "Voc")
 $L_EQ=HdrLike $lh '*equipe*'                      # [6] tamanho da equipe
@@ -302,6 +336,24 @@ foreach($r in $ld){ $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){
   $s=CleanUtm $r[$L_SET];  if($s -eq ''){$s='SEM_UTM'}
   $a=AdCode (CleanUtm $r[$L_CONT]); if($a -eq ''){$a='SEM_UTM'}
   $o=GetGrain $d $c $s $a; $o.leads++; if(IsQual $r[$L_FAT] $r[$L_VOCE]){ $o.qlf++ } }
+
+# ---- LEADS DO FORMS (campanhas com a tag "forms") --------------------------------
+# Planilha separada (Lead Form nativo). Como campaign_name/adset_name/ad_name sao iguais aos das
+# queries, os leads caem no MESMO grain do gasto. Alimenta: diario (funil geral), grain (arvore) e
+# leadByEmail (atribuicao de venda por e-mail). Objecoes/estudo NAO usam (planilha sem "desafio").
+$formsLeads=0; $formsQlf=0; $formsFatSeen=@{}
+foreach($r in $ffd){
+  $cn=Norm $r[$FF_CAMP]; if($cn -eq '' -or -not (IsFormsCamp $cn)){ continue }   # so campanhas com a tag forms
+  $d=''; $ct=Norm $r[$FF_DATE]; if($ct -match '(\d{4})-(\d{2})-(\d{2})'){ $d=$Matches[0].Substring(0,10) }
+  if($d -eq ''){ continue }
+  $isq = IsQualForms $r[$FF_FAT] $r[$FF_VOCE]
+  $fk=FatNormForms $r[$FF_FAT]; if($fk -ne ''){ if(-not $formsFatSeen.ContainsKey($fk)){ $formsFatSeen[$fk]=0 }; $formsFatSeen[$fk]++ }
+  $gc=$cn; $gs=Norm $r[$FF_SET]; $ga=AdCode $r[$FF_AD]      # chaves identicas as das queries
+  $o=GetDay $d; $o.leads++; if($isq){ $o.qlf++ }            # funil geral (gasto do forms ja esta no diario)
+  $og=GetGrain $d $gc $gs $ga; $og.leads++; if($isq){ $og.qlf++ }   # arvore (mesma celula do gasto)
+  $em=(Norm $r[$FF_EMAIL]).ToLower(); if($em -match '@'){ $leadByEmail[$em]=[pscustomobject]@{campaign=$gc;adset=$gs;ad=$ga;bucket='Outros'} }  # atribuicao de venda
+  $formsLeads++; if($isq){ $formsQlf++ }
+}
 
 # buyer objections per purchase day (only matched buyers have a known desafio)
 $objBuyers=@{}
@@ -618,4 +670,5 @@ if($Mode -eq 'all' -or $Mode -eq 'insights'){
   $insJson = '{"generatedAt":"'+$nowIso+'","generatedAtBR":"'+$nowBR+'","windowStart":"'+$w30s+'","windowEnd":"'+$dmax+'","qlfTotal":'+([int]$totQ)+',"buyersMatched":'+([int]$matchedBuyers)+',"insights":['+($parts -join ',')+']}'
   [IO.File]::WriteAllText((Join-Path $root 'data-insights.js'), ("window.DASH_INSIGHTS="+$insJson+";"), $utf8)
 }
+Write-Host ("FORMS: {0} leads ({1} qualif) de campanhas tag-forms | faturamentos vistos: {2}" -f $formsLeads,$formsQlf,(($formsFatSeen.GetEnumerator()|Sort-Object Name|ForEach-Object{ "$($_.Name)=$($_.Value)" }) -join '; '))
 Write-Host ("OK mode={0}  days={1}  grain={2}  insights={3}  buyers={4}/{5}" -f $Mode,$dailyArr.Count,$grainArr.Count,$ins.Count,$matchedBuyers,$paidCount)
