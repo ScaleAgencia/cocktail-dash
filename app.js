@@ -184,38 +184,45 @@ function apSaleState(s){   // por venda: parcelas já pagas até hoje, recebido,
   const sinalPaid = s.d<=AP_TODAY ? s.s : 0;
   return {paid, rec:sinalPaid+paid*s.p, rest:(s.v-sinalPaid-paid*s.p), now, last, active:paid<(s.n||0)};
 }
+// período da aba Ápice: segue o seletor; se começa no 1º dia da dash ("Tudo"), abre pra trás (vendas de 2025) e
+// inclui as vendas sem data (indicação) — que não dá pra pôr em nenhum período específico
+function apRange(){ const all=state.start<=DMIN; return {a:all?'0000-01-01':state.start, b:state.end, all}; }
+function apSalesIn(r){ return AP_SALES.filter(s=> s.d ? (s.d>=r.a && s.d<=r.b) : r.all); }
 function renderApiceFin(){
   const hero=document.getElementById('apFin'); if(!hero) return;
-  const nD=AP_SALES.filter(s=>!s.d).length;
+  const r=apRange(), D2=v=>v.split('-').reverse().join('/');
+  const perLbl = r.all ? `tudo (desde a 1ª venda, ${AP_SALES.filter(s=>s.d).map(s=>s.d).sort()[0]?D2(AP_SALES.filter(s=>s.d).map(s=>s.d).sort()[0]):'—'}) até ${D2(r.b)}` : `${D2(r.a)} → ${D2(r.b)}`;
   document.getElementById('apFinIntro').innerHTML =
-    `Vendas do Ápice da planilha <b>VENDAS MASTERMIND</b> (${int(APICE.ativas||0)} ativas${APICE.inativas?`, ${int(APICE.inativas)} inativas fora`:''}). Regra de caixa: a <b>entrada</b> entra no dia do coquetel e o resto vira <b>parcelas iguais todo dia 1</b>, a partir do mês seguinte. Base completa (não usa o seletor de datas). Dados de ${APICE.generatedAtBR||'—'} (atualiza a cada 3h).`;
+    `Vendas do Ápice da planilha <b>VENDAS MASTERMIND</b> (${int(APICE.ativas||0)} ativas${APICE.inativas?`, ${int(APICE.inativas)} inativas fora`:''}), no período <b>${perLbl}</b>. Regra de caixa: a <b>entrada</b> entra no dia do coquetel e o resto vira <b>parcelas iguais todo dia 1</b>, a partir do mês seguinte. Em <b>Tudo</b> entram também as vendas de 2025 e as sem data. Dados de ${APICE.generatedAtBR||'—'} (atualiza a cada 3h).`;
   if(!AP_SALES.length){ hero.innerHTML='<div class="card"><div class="sub">Sem vendas do Ápice na planilha.</div></div>'; return; }
   const [m0,m1]=monthRange(0), [n0,n1]=monthRange(1);
-  const mrr=apCash(m0,m1), now=apCash(m0,AP_TODAY), nxt=apCash(n0,n1);
-  let rec=0, rest=0, active=0, vend=0; for(const s of AP_SALES){ vend+=s.v; const st=apSaleState(s); if(!st) continue; rec+=st.rec; rest+=st.rest; if(st.active) active++; }
-  const tk=vend/AP_SALES.length;
+  const per=apCash(r.a,r.b), sales=apSalesIn(r), mrr=apCash(m0,m1), nxt=apCash(n0,n1);
+  const vendP=sales.reduce((t,s)=>t+s.v,0), nD=sales.filter(s=>!s.d).length;
+  let rec=0, rest=0, active=0; for(const s of AP_SALES){ const st=apSaleState(s); if(!st) continue; rec+=st.rec; rest+=st.rest; if(st.active) active++; }
   hero.innerHTML=`
     <div class="aph-main">
-      <div class="aph-tag">💰 Receita recorrente do Ápice</div>
-      <div class="aph-v">${money(mrr.p)}<span>/mês</span></div>
-      <div class="aph-s">parcelas que entram no dia ${m0.split('-').reverse().join('/')} · <b>${int(mrr.nP)}</b> mulheres pagando em ${monthName(m0)}</div>
-      <div class="aph-next">Próximo mês: <b>${money(nxt.p)}</b> <span>(${int(nxt.nP)} parcelas em ${monthName(n0)})</span></div>
+      <div class="aph-tag">💰 Caixa do Ápice no período</div>
+      <div class="aph-v">${money(per.t)}</div>
+      <div class="aph-s">parcelas <b>${money(per.p)}</b> <span class="aph-op">(${int(per.nP)})</span> + entradas <b>${money(per.s)}</b> <span class="aph-op">(${int(per.nS)})</span></div>
+      <div class="aph-next">🔁 Receita recorrente hoje: <b>${money(mrr.p)}/mês</b> <span>(${int(mrr.nP)} mulheres pagando em ${monthName(m0)})</span></div>
     </div>
     <div class="aph-tiles">
-      <div class="aph-t"><div class="aph-tk">Entrou este mês</div><div class="aph-tv">${money(now.t)}</div><div class="aph-ts">parcelas ${money(now.p)} + entradas ${money(now.s)}</div></div>
-      <div class="aph-t"><div class="aph-tk">Previsão de caixa · ${monthName(n0,true)}</div><div class="aph-tv">${money(nxt.t)}</div><div class="aph-ts">só o que já está contratado</div></div>
-      <div class="aph-t"><div class="aph-tk">Já recebido</div><div class="aph-tv">${money(rec)}</div><div class="aph-ts">entradas + parcelas até hoje</div></div>
-      <div class="aph-t"><div class="aph-tk">A receber</div><div class="aph-tv">${money(rest)}</div><div class="aph-ts">${int(active)} contratos ainda pagando</div></div>
-      <div class="aph-t"><div class="aph-tk">Vendido (ticket total)</div><div class="aph-tv">${money(vend)}</div><div class="aph-ts">${int(AP_SALES.length)} vendas · ticket médio ${money(tk)}${nD?` · ${int(nD)} sem data`:''}</div></div>
+      <div class="aph-t"><div class="aph-tk"><i class="aph-chip">período</i>Vendido</div><div class="aph-tv">${money(vendP)}</div><div class="aph-ts">${int(sales.length)} ${sales.length===1?'venda':'vendas'}${sales.length?` · ticket médio ${money(vendP/sales.length)}`:''}${nD?` · ${int(nD)} sem data`:''}</div></div>
+      <div class="aph-t"><div class="aph-tk"><i class="aph-chip">período</i>Entradas</div><div class="aph-tv">${money(per.s)}</div><div class="aph-ts">pagas no dia do coquetel</div></div>
+      <div class="aph-t"><div class="aph-tk"><i class="aph-chip">período</i>Parcelas</div><div class="aph-tv">${money(per.p)}</div><div class="aph-ts">${int(per.nP)} pagamentos no dia 1</div></div>
+      <div class="aph-t aph-g"><div class="aph-tk"><i class="aph-chip g">geral</i>Previsão · ${monthName(n0,true)}</div><div class="aph-tv">${money(nxt.t)}</div><div class="aph-ts">${int(nxt.nP)} parcelas já contratadas</div></div>
+      <div class="aph-t aph-g"><div class="aph-tk"><i class="aph-chip g">geral</i>Já recebido</div><div class="aph-tv">${money(rec)}</div><div class="aph-ts">entradas + parcelas até hoje</div></div>
+      <div class="aph-t aph-g"><div class="aph-tk"><i class="aph-chip g">geral</i>A receber</div><div class="aph-tv">${money(rest)}</div><div class="aph-ts">${int(active)} contratos ainda pagando</div></div>
     </div>`;
   renderApChart();
-  // vendas por Cocktail (data do coquetel)
+  // vendas por Cocktail (data do coquetel) — só as do período
   const g=new Map();
-  for(const s of AP_SALES){ const k=s.d||('~'+(s.t||'sem data')); let o=g.get(k); if(!o){ o={k,d:s.d,t:s.t,n:0,v:0,rec:0,rest:0,now:0,last:'',noDate:!s.d}; g.set(k,o); }
+  for(const s of sales){ const k=s.d||('~'+(s.t||'sem data')); let o=g.get(k); if(!o){ o={k,d:s.d,t:s.t,n:0,v:0,rec:0,rest:0,now:0,last:'',noDate:!s.d}; g.set(k,o); }
     o.n++; o.v+=s.v; const st=apSaleState(s); if(st){ o.rec+=st.rec; o.rest+=st.rest; o.now+=st.now; if(st.last>o.last) o.last=st.last; } }
   const rows=[...g.values()].sort((a,b)=>(a.noDate?1:0)-(b.noDate?1:0) || (b.d||'').localeCompare(a.d||''));
-  document.querySelector('#apCohort thead').innerHTML='<tr><th class="pf-name">Cocktail (venda)</th><th>Vendas</th><th>Vendido</th><th>Já entrou</th><th>A receber</th><th>Parcela/mês agora</th><th>Última parcela</th></tr>';
-  document.querySelector('#apCohort tbody').innerHTML=rows.map(o=>{
+  document.getElementById('apCohortNote').textContent = `Cada linha é um Cocktail em que houve venda do Ápice no período (${perLbl}): quanto foi vendido, quanto já entrou de caixa até hoje, quanto ainda vai entrar e quanto pinga por mês agora.`;
+  document.querySelector('#apCohort thead').innerHTML= rows.length ? '<tr><th class="pf-name">Cocktail (venda)</th><th>Vendas</th><th>Vendido</th><th>Já entrou</th><th>A receber</th><th>Parcela/mês agora</th><th>Última parcela</th></tr>' : '';
+  document.querySelector('#apCohort tbody').innerHTML= rows.length ? rows.map(o=>{
     const pr=o.v>0?Math.min(100,o.rec/o.v*100):0;
     return `<tr><td class="pf-name">${o.noDate?`<span class="ap-nodate">sem data</span> <span class="sub">${esc(o.t)}</span>`:`🍸 ${o.d.split('-').reverse().join('/')}`}</td>
       <td data-l="Vendas">${int(o.n)}</td><td data-l="Vendido">${money(o.v)}</td>
@@ -223,7 +230,7 @@ function renderApiceFin(){
       <td data-l="A receber">${o.noDate?'<span class="sub">—</span>':money(o.rest)}</td>
       <td data-l="Parcela/mês agora">${o.now>0?`<b class="ap-now">${money(o.now)}</b>`:'<span class="sub">—</span>'}</td>
       <td data-l="Última parcela">${o.last?monthName(o.last,true):'<span class="sub">—</span>'}</td></tr>`;
-  }).join('');
+  }).join('') : '<tr><td class="sub" style="text-align:left">Nenhuma venda do Ápice no período selecionado.</td></tr>';
   renderApIssues();
 }
 // gráfico de barras empilhadas (parcelas + entradas) por mês; meses futuros = previsão. Desenhado na largura real.
@@ -241,6 +248,12 @@ function renderApChart(){
   let grid='',bars='',xl='',hz='';
   for(let g=0;g<=4;g++){ const v=top*g/4, yy=y(v); grid+=`<line x1="${pad.l}" x2="${W-pad.r}" y1="${yy}" y2="${yy}" stroke="#e8edf2"/><text x="${pad.l-6}" y="${yy+3.5}" font-size="10.5" text-anchor="end" fill="#7b8794">${g?moneyK(v):'0'}</text>`; }
   const every=Math.ceil(nM/(W<560?6:13));
+  // meses que tocam o período selecionado (fora de "Tudo") ganham uma faixa azul clara
+  const rg=apRange(); let band='';
+  if(!rg.all){ const i0=M.findIndex(o=>{ const e=fmtD(new Date(parseD(o.k).getFullYear(),parseD(o.k).getMonth()+1,0)); return e>=rg.a; });
+    let i1=-1; M.forEach((o,i)=>{ if(o.k<=rg.b) i1=i; });
+    if(i0>=0 && i1>=i0) band=`<rect x="${pad.l+i0*gw}" y="${pad.t-14}" width="${(i1-i0+1)*gw}" height="${ih+14}" rx="6" fill="#2f7fd1" opacity=".08"/><text x="${pad.l+(i0+(i1-i0+1)/2)*gw}" y="${pad.t-4}" font-size="10" font-weight="700" text-anchor="middle" fill="#2f7fd1">período</text>`; }
+  bars+=band;
   M.forEach((o,i)=>{ const x=pad.l+i*gw+(gw-bw)/2, fut=i>cur, isCur=i===cur, op=fut?0.42:1;
     const hp=o.p/top*ih, hs=o.s/top*ih, yp=pad.t+ih-hp, ys=yp-hs;
     if(o.p>0) bars+=`<rect x="${x}" y="${yp}" width="${bw}" height="${Math.max(hp,1)}" rx="2" fill="#e0ad3c" opacity="${op}"/>`;
@@ -513,8 +526,8 @@ const PQS = arr(PF.q).map(q=>{
   return {k:q.k, def, multi:!!q.multi, labels, map};
 });
 // L=[dia, objeção, resp…, texto]   B=[dia compra, dia 1º contato, objeção, valor, virou Ápice 0/1, pessoa, resp…, texto]
-// A=[objeção, qualificada 0/1, comprou Cocktail 0/1, resp…, texto]  (Ápice é uma lista, sem data)
-const PNQ=PQS.length, PL_OFF=2, PB_OFF=6, PA_OFF=3, PL_T=PL_OFF+PNQ, PB_T=PB_OFF+PNQ, PA_T=PA_OFF+PNQ;
+// A=[dia da venda do Ápice (-99999 = sem data), objeção, qualificada 0/1, comprou Cocktail 0/1, resp…, texto]
+const PNQ=PQS.length, PL_OFF=2, PB_OFF=6, PA_OFF=4, PL_T=PL_OFF+PNQ, PB_T=PB_OFF+PNQ, PA_T=PA_OFF+PNQ;
 const PBK = arr(PF.buckets);
 const PF_D0 = PF.d0 ? parseD(PF.d0) : null;
 const pfIdx = s => Math.round((parseD(s)-PF_D0)/86400000);
@@ -589,7 +602,7 @@ function bindToggle(tbodySel,set,rerender){
 const AUD = {
   qlf:  {off:PL_OFF, tcol:PL_T, bcol:1, who:'qualificadas', base:'das qualificadas do período'},
   buy:  {off:PB_OFF, tcol:PB_T, bcol:2, who:'compradoras', base:'das compradoras do período', apice:true},
-  apice:{off:PA_OFF, tcol:PA_T, bcol:0, who:'participantes do Ápice', base:'das participantes do Ápice'}
+  apice:{off:PA_OFF, tcol:PA_T, bcol:1, who:'participantes do Ápice', base:'das participantes do Ápice do período'}
 };
 const apSize = rows => { const ppl=new Set(), ap=new Set(); for(const r of rows){ ppl.add(r[5]); if(r[4]===1) ap.add(r[5]); } return {ppl:ppl.size, ap:ap.size}; };
 // tabela: % de cada objeção + (compradoras: quantas viraram Ápice) + o que elas têm em comum; raio-x ao clicar
@@ -840,6 +853,8 @@ function render(){
   renderObjections();
   renderTempo();
   renderPerfil();
+  renderApiceFin();
+  renderApice();
 }
 
 // ===================== comercial (vendas por vendedora, period-aware) =====================
@@ -1126,24 +1141,25 @@ function fatEstimate(d){ const fi=PQS.findIndex(q=>q.k==='fat'); let s=0, n=0;
   if(fi>=0){ PQS[fi].labels.forEach((L,li)=>{ const m=PQ_DEF.fat.mid[L]; if(m){ s+=m*d[fi].c[li]; n+=d[fi].c[li]; } }); }
   return n ? s/n : 0; }
 // Ápice: participantes (planilha, amarelas fora) casadas com o Typeform — mesma visão de perfil das compradoras, sem data
-function renderApice(){
-  const M=PF.apice||{}, A=arr(PF.A), n=A.length, total=M.total||0;
+function renderApice(){   // perfil das participantes do Ápice cuja VENDA (data do coquetel) cai no período
+  const M=PF.apice||{}, rg=apRange(), a=rg.all?-Infinity:pfIdx(rg.a), b=pfIdx(rg.b);
+  const A=arr(PF.A).filter(r=> r[0]===-99999 ? rg.all : (r[0]>=a && r[0]<=b)), n=A.length, total=apSalesIn(rg).length;
   document.getElementById('apiceIntro').innerHTML =
-    `Participantes <b>ativas</b> da planilha do Ápice (${int(total)} mulheres${M.inativas?`; ${int(M.inativas)} inativas ficam fora`:''}) cruzadas com as respostas do Typeform — por e-mail e, se não achar, pelo nome. Mostra todas (não usa o seletor de datas). Só agregados e depoimentos anonimizados.`;
-  if(!n){ document.getElementById('apiceStats').innerHTML=''; document.getElementById('apiceNote').innerHTML='<div class="ins-text">Nenhuma participante do Ápice encontrada na base de leads.</div>';
+    `Participantes <b>ativas</b> do Ápice com venda no período (${int(total)} vendas${M.inativas?`; ${int(M.inativas)} inativas ficam fora`:''}), cruzadas com as respostas do Typeform — por e-mail e, se não achar, pelo nome. Só agregados e depoimentos anonimizados.`;
+  if(!n){ document.getElementById('apiceStats').innerHTML=''; document.getElementById('apiceNote').innerHTML=`<div class="ins-text">${total?`Nenhuma das ${int(total)} participantes do período foi encontrada na base de leads.`:'Nenhuma venda do Ápice no período selecionado.'}</div>`;
     audObjTable('#aObjTable',AUD.apice,A,pfOpen.apice,renderApice); audGrid(document.getElementById('aGrid'),AUD.apice,A); audQuotes(document.getElementById('aQuotes'),A,PA_T,null,16); return; }
-  const d=pfDist(A,PA_OFF), fat=fatEstimate(d), qlf=A.filter(r=>r[1]===1).length, ck=A.filter(r=>r[2]===1).length;
+  const d=pfDist(A,PA_OFF), fat=fatEstimate(d), qlf=A.filter(r=>r[2]===1).length, ck=A.filter(r=>r[3]===1).length;
   document.getElementById('apiceStats').innerHTML =
-    statCard(int(total),'Mulheres no Ápice') +
-    statCard(int(n),'Encontradas na base de leads',`${int(M.matchedEmail||0)} por e-mail · ${int(M.matchedName||0)} por nome`) +
+    statCard(int(total),'Vendas do Ápice no período') +
+    statCard(int(n),'Encontradas na base de leads',`${pct(total?n/total*100:0)} das participantes do período`) +
     statCard(int(qlf),'Qualificadas (≥100k)',`${pct(qlf/n*100)} das encontradas`) +
     statCard(fat?`R$ ${int(fat)}`:'—','Faturamento médio /mês (estimado)','pelo meio de cada faixa') +
     statCard(int(ck),'Também compraram o Cocktail',`${pct(ck/n*100)} das encontradas`);
   document.getElementById('apiceNote').innerHTML =
-    `<div class="ins-text">📌 <b>${int(n)} de ${int(total)}</b> participantes foram encontradas na base de leads (o perfil abaixo é sobre essas). As outras <b>${int(total-n)}</b> não estão na base com o mesmo e-mail/nome — provavelmente entraram por outro caminho (indicação, convite direto, VIP).</div>`;
+    `<div class="ins-text">📌 <b>${int(n)} de ${int(total)}</b> participantes do período foram encontradas na base de leads (o perfil abaixo é sobre essas). As outras <b>${int(Math.max(0,total-n))}</b> não estão na base com o mesmo e-mail/nome — provavelmente entraram por outro caminho (indicação, convite direto, VIP).</div>`;
   audObjTable('#aObjTable',AUD.apice,A,pfOpen.apice,renderApice);
   audGrid(document.getElementById('aGrid'),AUD.apice,A,d);
-  audQuotes(document.getElementById('aQuotes'),A,PA_T,null,16);
+  audQuotes(document.getElementById('aQuotes'),A,PA_T,0,16);   // vendas mais recentes primeiro
 }
 
 // ===================== datas (preenchimento de cada Cocktail) =====================
@@ -1212,7 +1228,7 @@ function init(){
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
   const PAGES=['funnel','sd','datas','obj','insights','comercial','bestads','tempo','perfil','apice','ascensao'];
-  const NOCTRL=['insights','apice','datas']; // abas de base completa (sem seletor de período); obj, tempo, perfil, comercial, bestads, sd e ascensao usam o seletor
+  const NOCTRL=['insights','datas']; // abas de base completa (sem seletor de período); obj, tempo, perfil, apice, comercial, bestads, sd e ascensao usam o seletor
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
     const pg=b.dataset.page;
@@ -1230,7 +1246,7 @@ function init(){
   document.getElementById('goalInput').onchange=e=>{ localStorage.setItem('ccn_goal',e.target.value||15000); render(); };
   const [s,e]=lastN(30); setRange(s,e);
   renderInsights();
-  renderApiceFin(); renderApice(); renderDatas();
+  renderDatas();
   const hash=location.hash.toLowerCase();
   if(hash.includes('insight')){ document.querySelector('.pagebtn[data-page="insights"]').click(); }
   else if(hash.includes('obj')){ document.querySelector('.pagebtn[data-page="obj"]').click(); }

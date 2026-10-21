@@ -599,7 +599,7 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao' -or $Mode -eq 
       $qTxt=ACell $r $A_QTD; $q=0; if($qTxt -match '^\d+$'){ $q=[int]$qTxt }
       $dTxt=ACell $r $A_DATA; $dt=''; if($dTxt -match '^(\d{1,2})/(\d{1,2})/(\d{4})'){ $dt=('{0}-{1:d2}-{2:d2}' -f $Matches[3],[int]$Matches[2],[int]$Matches[1]) }
       $key=NameKey $nm
-      if($em -match '@' -or $key -match ' '){ $apList+=[pscustomobject]@{email=$(if($em -match '@'){$em}else{''});key=$key;valor=$(if($null -ne $v){$v}else{0.0})} }
+      if($em -match '@' -or $key -match ' '){ $apList+=[pscustomobject]@{email=$(if($em -match '@'){$em}else{''});key=$key;valor=$(if($null -ne $v){$v}else{0.0});d=$dt} }   # d = data da venda (filtro de periodo da aba Apice)
       if($null -eq $v){ ApIssue $ln 'novalor' $vTxt 0 0; continue }               # sem VALOR: fora do financeiro
       if($null -eq $s){ if($sTxt -ne ''){ ApIssue $ln 'sinaltxt' $sTxt 0 0 }; $s=0.0 }
       if($s -gt $v){ ApIssue $ln 'sinalmaior' '' $s $v; $s=$v }
@@ -729,7 +729,7 @@ foreach($w in $apList){ $rs=$null
   $p=PPick $rs ''
   $isq=0; if(IsQual $p.pick[$L_FAT] $p.pick[$L_VOCE]){ $isq=1 }
   $ck=0; if($kE.ContainsKey($w.email) -or ($w.key -match ' ' -and $kN.ContainsKey($w.key))){ $ck=1 }
-  $pApRows.Add([pscustomobject]@{b=(Bucket $p.des);q=$isq;ck=$ck;a=$p.a;des=$p.des}) }
+  $pApRows.Add([pscustomobject]@{d=$w.d;b=(Bucket $p.des);q=$isq;ck=$ck;a=$p.a;des=$p.des}) }
 
 # dia 0 = data mais antiga usada; datas viram inteiros (arquivo menor)
 $P_D0s='9999-12-31'
@@ -743,9 +743,10 @@ foreach($r in $pLeadRows){
 $pB=New-Object System.Collections.Generic.List[string]   # [dia compra, dia 1o contato, objecao, valor, virou Apice 0/1, pid, resp..., texto]
 foreach($b in $pBuy){ $t=PTxt $b.des 3 1
   $pB.Add('[' + (PDay $b.d) + ',' + (PDay $b.first) + ',' + $PBIDX[$b.b] + ',' + [math]::Round($b.rev,0) + ',' + $b.ap + ',' + $b.pid + ',' + ($b.a -join ',') + ',' + $t + ']') }
-$pA=New-Object System.Collections.Generic.List[string]   # [objecao, qualificada 0/1, comprou Cocktail 0/1, resp..., texto]
+$pA=New-Object System.Collections.Generic.List[string]   # [dia da venda do Apice (-99999 = sem data), objecao, qualificada 0/1, comprou Cocktail 0/1, resp..., texto]
 foreach($x in $pApRows){ $t=PTxt $x.des 3 1
-  $pA.Add('[' + $PBIDX[$x.b] + ',' + $x.q + ',' + $x.ck + ',' + ($x.a -join ',') + ',' + $t + ']') }
+  $dA=-99999; if($x.d -match '^\d{4}-\d{2}-\d{2}$'){ $dA=PDay $x.d }   # 2025 vira negativo (d0 e 2026) — ok
+  $pA.Add('[' + $dA + ',' + $PBIDX[$x.b] + ',' + $x.q + ',' + $x.ck + ',' + ($x.a -join ',') + ',' + $t + ']') }
 $qDefs=@(); foreach($qk in $PQ){   # ⚠️ nome != $PQ (variavel do PS e case-insensitive: $pQ seria a MESMA)
   if($qk -eq 'busca'){ $o=@($BUSCA_B | ForEach-Object { $_[0] }) + 'outro' } else { $o=@($PQRAW[$qk].ToArray()) }
   $qDefs += [pscustomobject]@{k=$qk;multi=($qk -eq 'busca');col=($PCOL[$qk] -ge 0);o=[object[]]$o} }
