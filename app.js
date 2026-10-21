@@ -3,7 +3,7 @@
 const D = window.DASH_DATA;
 const OBJ = window.DASH_OBJ || {};
 const INS = window.DASH_INSIGHTS || {};
-const ESTUDO = window.DASH_ESTUDO || {};
+const PF = window.DASH_PERFIL || {};   // por pessoa (leads qualificadas + compras) -> Objeções/Compradoras/Tempo filtráveis por data
 const APICE = window.DASH_APICE || {};
 const ASC = window.DASH_ASC || {};
 const DATAS = window.DASH_DATAS || {};
@@ -22,7 +22,7 @@ const OBJ_LABELS = {
 };
 const OBJ_COLORS = ['#1769b4','#2f7fd1','#4aa3e8','#2e9e3f','#7bc043','#e9a23b','#e0772f','#d4544a','#9b59b6','#7b8794','#b0bac4','#c8d0d8'];
 const objLabel = k => OBJ_LABELS[k] || k;
-const objColor = k => OBJ_COLORS[Math.max(0,(OBJ.objOrder||[]).indexOf(k)) % OBJ_COLORS.length];
+const objColor = k => OBJ_COLORS[Math.max(0,(PF.buckets||OBJ.objOrder||[]).indexOf(k)) % OBJ_COLORS.length];
 
 // ---- formatters ----
 const nf2 = new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -315,16 +315,118 @@ function renderSpendChart(){
       <div class="tt-r"><span class="sub">${int(+ds.qlf)} qualificados no dia</span></div>`);
 }
 
+// ===================== perfil por pessoa: Objeções · Compradoras · Tempo (TUDO pelo período) =====================
+// data-perfil.js traz 1 linha por lead QUALIFICADA (data do lead) e 1 por COMPRA (data da compra), com a resposta de
+// cada pergunta do Typeform. Aqui agrega pelo seletor de datas. O build manda o texto cru das opções; rótulo,
+// ordem e junção das grafias antiga/nova do Typeform vivem aqui (PQ_DEF).
+const nkey = s => String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+const cap1 = s => { s=String(s==null?'':s).trim(); return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; };
+const PQ_DEF = {
+  fat:{label:'Faturamento mensal',icon:'💰',color:'var(--green)',
+    map:{'menos de r$ 5 mil':'Menos de R$ 5 mil','entre r$ 5 mil e r$ 10 mil':'R$ 5 a 10 mil','entre r$ 10 mil e r$ 50 mil':'R$ 10 a 50 mil','entre r$ 50 mil e r$ 100 mil':'R$ 50 a 100 mil',
+      'menos de 100mil':'Menos de R$ 100 mil','entre r$ 100 mil e r$ 200 mil':'R$ 100 a 200 mil','de 100k a 300k':'R$ 100 a 300 mil','acima de 200 mil':'Acima de R$ 200 mil',
+      'de 300k a 500k':'R$ 300 a 500 mil','de 500k a 1m':'R$ 500 mil a 1 mi','acima de 1m':'Acima de R$ 1 mi'},
+    order:['Menos de R$ 5 mil','R$ 5 a 10 mil','R$ 10 a 50 mil','R$ 50 a 100 mil','Menos de R$ 100 mil','R$ 100 a 200 mil','R$ 100 a 300 mil','Acima de R$ 200 mil','R$ 300 a 500 mil','R$ 500 mil a 1 mi','Acima de R$ 1 mi'],
+    mid:{'Menos de R$ 5 mil':2500,'R$ 5 a 10 mil':7500,'R$ 10 a 50 mil':30000,'R$ 50 a 100 mil':75000,'Menos de R$ 100 mil':50000,'R$ 100 a 200 mil':150000,'R$ 100 a 300 mil':200000,'Acima de R$ 200 mil':300000,'R$ 300 a 500 mil':400000,'R$ 500 mil a 1 mi':750000,'Acima de R$ 1 mi':1200000}},
+  voce:{label:'Perfil profissional',icon:'👩‍💼',color:'var(--blue2)'},
+  eq:{label:'Tamanho da equipe',icon:'👥',color:'var(--blue)',
+    map:{'1':'Só ela','05':'Até 5 pessoas','2-7':'2 a 7 pessoas','de 06 a 20':'6 a 20 pessoas','8-15':'8 a 15 pessoas','16-50':'16 a 50 pessoas','de 21 a 50':'21 a 50 pessoas','50+':'Mais de 50','acima de 50':'Mais de 50'},
+    order:['Só ela','Até 5 pessoas','2 a 7 pessoas','6 a 20 pessoas','8 a 15 pessoas','16 a 50 pessoas','21 a 50 pessoas','Mais de 50']},
+  margem:{label:'Margem de lucro',icon:'📈',color:'#2e9e3f',isNew:true,order:['Até 10%','De 11% a 30%','Acima de 30%']},
+  civil:{label:'Estado civil',icon:'💍',color:'#9b59b6',isNew:true},
+  filhos:{label:'Filhos',icon:'👶',color:'#e0772f',isNew:true,
+    map:{'nao':'Sem filhos','1':'1 filho(a)','2':'2 filhos','3+':'3 ou mais','sim':'Tem filhos (não disse quantos)'},
+    order:['Sem filhos','1 filho(a)','2 filhos','3 ou mais','Tem filhos (não disse quantos)']},
+  fe:{label:'Fé / religião',icon:'🙏',color:'#1769b4',isNew:true,map:{'tenho fe, mas nao sigo uma religiao especifica':'Tem fé, sem religião específica'}},
+  intent:{label:'Intenção de pagamento',icon:'💳',color:'var(--navy)',
+    map:{'pronta para investir a vista (pix ou cartao)':'À vista (Pix ou cartão)','prefiro parcelar em ate 12x no cartao':'Parcelar em até 12x','tenho duvidas financeiras, preciso conversar':'Dúvida financeira, quer conversar'},
+    order:['À vista (Pix ou cartão)','Parcelar em até 12x','Dúvida financeira, quer conversar']},
+  freq:{label:'Sente que poderia faturar mais',icon:'🔁',color:'#4aa3e8',map:{'as vezes':'Às vezes','acho que nao':'Acho que não'},
+    order:['Sempre','Quase sempre','Frequentemente','Às vezes','Acho que não','Nunca']},
+  pres:{label:'Pode ir presencial em Barueri/SP',icon:'📍',color:'#7b8794',
+    map:{'sim, consigo me programar':'Sim, consegue ir','talvez (preciso ajustar minha agenda)':'Talvez (ajustar agenda)','nao':'Não'},order:['Sim, consegue ir','Talvez (ajustar agenda)','Não']},
+  busca:{label:'O que busca construir',icon:'🌱',color:'#e9a23b',isNew:true,multi:true,
+    map:{network:'Network e conexões',cresc:'Crescer e faturar mais',estrut:'Estrutura e gestão',posic:'Posicionamento e autoridade',estrat:'Estratégia e clareza',
+      aprend:'Conhecimento e aprendizado',mente:'Mentalidade e confiança',legado:'Legado, família e liberdade',financ:'Finanças e patrimônio',outro:'Outros temas'},
+    hide:['Outros temas']}
+};
+// perguntas na ordem do arquivo; cada opção crua -> rótulo (grafias que significam o mesmo viram 1 rótulo)
+const PQS = arr(PF.q).map(q=>{
+  const def=PQ_DEF[q.k]||{label:q.k,icon:'•'}; const labels=[], map=[];
+  arr(q.o).forEach((raw,i)=>{ const L=(def.map&&def.map[nkey(raw)])||cap1(raw); let li=labels.indexOf(L); if(li<0){ labels.push(L); li=labels.length-1; } map[i]=li; });
+  return {k:q.k, def, multi:!!q.multi, labels, map};
+});
+const PNQ=PQS.length, PL_OFF=2, PB_OFF=4, PL_T=2+PNQ, PB_T=4+PNQ;   // L=[dia,objeção,resp...,texto]  B=[dia compra,dia 1º contato,objeção,valor,resp...,texto]
+const PBK = arr(PF.buckets);
+const PF_D0 = PF.d0 ? parseD(PF.d0) : null;
+const pfIdx = s => Math.round((parseD(s)-PF_D0)/86400000);
+function pfRows(list,start,end){ if(!PF_D0) return []; const a=pfIdx(start), b=pfIdx(end); return arr(list).filter(r=>r[0]>=a && r[0]<=b); }
+function pfDist(rows,off){
+  const res=PQS.map(q=>({n:0,c:new Array(q.labels.length).fill(0)}));
+  for(const r of rows){ for(let i=0;i<PNQ;i++){ const v=r[off+i]; if(v==null||v<0) continue; const q=PQS[i], o=res[i]; o.n++;
+    if(q.multi){ for(let b=0;b<q.labels.length;b++) if(v&(1<<b)) o.c[b]++; } else o.c[q.map[v]]++; } }
+  return res;
+}
+function pfList(qi,d){   // distribuição de uma pergunta -> [{label,n,pct}] na ordem natural das opções
+  const q=PQS[qi], o=d[qi]; if(!o.n) return [];
+  const hide=q.def.hide||[], ord=q.def.order;
+  const list=q.labels.map((L,li)=>({label:L,n:o.c[li],pct:o.c[li]/o.n*100})).filter(x=>x.n>0 && !hide.includes(x.label));
+  if(ord) list.sort((a,b)=>{ const ia=ord.indexOf(a.label), ib=ord.indexOf(b.label); return (ia<0?999:ia)-(ib<0?999:ib) || b.n-a.n; });
+  else list.sort((a,b)=>b.n-a.n);
+  return list;
+}
+// "o que têm em comum": respostas mais frequentes no grupo, priorizando as que fogem da média do período
+// (traço que quase todo mundo tem — ex.: 90% empresárias — não diferencia e fica de fora)
+function pfTraits(rows,off,base,max){
+  if(rows.length<5) return null;
+  const g=pfDist(rows,off), cand=[];
+  PQS.forEach((q,i)=>{ const go=g[i], bo=base[i]; if(go.n<5) return; const hide=q.def.hide||[];
+    q.labels.forEach((L,li)=>{ if(hide.includes(L)) return; const n=go.c[li]; if(n<3) return;
+      const s=n/go.n, bs=bo.n?bo.c[li]/bo.n:0, lift=bs>0?s/bs:1;
+      if(s<0.25 || lift<0.95) return;          // pouco comum no grupo, ou abaixo da média: não é "em comum"
+      if(bs>=0.7 && lift<1.1) return;
+      cand.push({q,i,L,s,bs,lift,score:s*Math.pow(Math.min(lift,3),2)}); }); });   // o que mais foge da média vem primeiro
+  cand.sort((a,b)=>b.score-a.score);
+  const seen=new Set(), pick=[];
+  for(const x of cand){ if(seen.has(x.i)) continue; seen.add(x.i); pick.push(x); if(pick.length>=(max||4)) break; }
+  return pick;
+}
+const fx1 = v => v.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
+function traitChip(x,who){
+  const up=x.lift>=1.2;
+  const tip=`${x.q.def.label}: ${pct(x.s*100)} ${who} (média do período: ${pct(x.bs*100)})`;
+  return `<span class="trait${up?' up':''}" title="${esc(tip)}"><span class="tr-ic">${x.q.def.icon}</span>${esc(x.L)} <b>${Math.round(x.s*100)}%</b>${up?`<i>↑ ${fx1(x.lift)}x</i>`:''}</span>`;
+}
+function traitsCell(t,who){
+  if(!t) return '<span class="sub">amostra pequena (menos de 5 pessoas)</span>';
+  if(!t.length) return '<span class="sub">nenhum traço se destaca da média</span>';
+  return `<div class="traits">${t.map(x=>traitChip(x,who)).join('')}</div>`;
+}
+function shareCell(p,n,color){
+  return `<div class="pshare"><span class="pshare-bar"><i style="width:${Math.min(100,p).toFixed(1)}%;background:${color}"></i></span><b>${pct(p)}</b><span class="sub">(${int(n)})</span></div>`;
+}
+// raio-x: TODAS as perguntas do grupo, top 3 respostas, com a marca da média do período
+function raioX(rows,off,base,baseLbl){
+  const g=pfDist(rows,off);
+  const cards=PQS.map((q,i)=>{ const go=g[i]; if(go.n<3) return '';
+    const top=pfList(i,g).sort((a,b)=>b.n-a.n).slice(0,3);
+    const lines=top.map(x=>{ const li=q.labels.indexOf(x.label), bs=base[i].n?base[i].c[li]/base[i].n*100:0;
+      return `<div class="rx-line"><div class="rx-lbl" title="${esc(x.label)}">${esc(x.label)}</div>
+        <div class="rx-bar"><div class="rx-fill" style="width:${Math.min(100,x.pct).toFixed(1)}%;background:${q.def.color||'var(--blue2)'}"></div><div class="rx-avg" style="left:${Math.min(100,bs).toFixed(1)}%" title="média ${baseLbl}: ${pct(bs)}"></div></div>
+        <div class="rx-v">${Math.round(x.pct)}%</div></div>`; }).join('');
+    return `<div class="rx-card"><div class="rx-h">${q.def.icon} ${esc(q.def.label)} <span class="sub">${int(go.n)} resp.</span></div>${lines}</div>`;
+  }).join('');
+  return `<div class="rx-legend"><span class="rx-key"><i class="rx-k-fill"></i>quem tem essa objeção</span><span class="rx-key"><i class="rx-k-avg"></i>média ${baseLbl}</span></div><div class="rx-grid">${cards||'<div class="sub">Sem respostas suficientes.</div>'}</div>`;
+}
+function bucketCount(rows,col){ const c=new Array(PBK.length).fill(0); for(const r of rows){ if(r[col]>=0) c[r[col]]++; } return c; }
+const pfOpen = { obj:new Set(), buy:new Set() };   // linhas abertas (raio-x) em cada tabela
+function bindToggle(tbodySel,set,rerender){
+  const tb=document.querySelector(tbodySel); if(!tb || tb.dataset.bound) return; tb.dataset.bound='1';
+  tb.addEventListener('click',e=>{ const tr=e.target.closest('tr.pf-row'); if(!tr) return; const k=tr.dataset.k; set.has(k)?set.delete(k):set.add(k); rerender(); });
+}
+
 // ===================== objections page =====================
 const sumv = o => Object.values(o).reduce((s,v)=>s+v,0);
-function objAgg(start,end){
-  const order = OBJ.objOrder || [];
-  const qlf={}, leads={}, buyers={};
-  for(const b of order){ qlf[b]=0; leads[b]=0; buyers[b]=0; }
-  for(const r of (OBJ.objLeads||[])){ if(r.date<start||r.date>end) continue; leads[r.bucket]=(leads[r.bucket]||0)+r.total; qlf[r.bucket]=(qlf[r.bucket]||0)+r.qlf; }
-  for(const r of (OBJ.objBuyers||[])){ if(r.date<start||r.date>end) continue; buyers[r.bucket]=(buyers[r.bucket]||0)+r.buyers; }
-  return {qlf,leads,buyers};
-}
 function objBars(map,total){
   const ents=Object.entries(map).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]);
   if(!ents.length||total<=0) return '<div class="sub">Sem dados no período selecionado.</div>';
@@ -337,41 +439,56 @@ function objBars(map,total){
   }).join('');
 }
 function renderObjections(){
-  const a=objAgg(state.start,state.end);
-  const qN=sumv(a.qlf), bN=sumv(a.buyers);
-  document.getElementById('objQlf').innerHTML=objBars(a.qlf,qN);
-  document.getElementById('objBuy').innerHTML=objBars(a.buyers,bN);
+  const L=pfRows(PF.L,state.start,state.end), B=pfRows(PF.B,state.start,state.end);
+  const qN=L.length, bN=B.length, vendas=sumDaily(state.start,state.end).sales;
+  const cL=bucketCount(L,1), cB=bucketCount(B,2);
+  const asMap=c=>Object.fromEntries(PBK.map((k,i)=>[k,c[i]]));
+  document.getElementById('objQlf').innerHTML=objBars(asMap(cL),qN);
+  document.getElementById('objBuy').innerHTML=objBars(asMap(cB),bN);
   document.getElementById('objQlfN').textContent=`(${int(qN)} no período)`;
   document.getElementById('objBuyN').textContent=`(${int(bN)} no período)`;
   document.getElementById('objNote').textContent=
-    `Categorizado por palavra-chave a partir da resposta livre "principal desafio". Compradores: ${OBJ.buyersMatched}/${OBJ.buyersTotal} casados com a base de leads por e-mail (só os casados entram aqui). Período: ${state.start.split('-').reverse().join('/')} → ${state.end.split('-').reverse().join('/')}. · Objeções atualizadas: ${OBJ.generatedAtBR||'—'} (diário).`;
-  // comparison table
-  const rows=(OBJ.objOrder||[]).map(k=>{ const q=a.qlf[k]||0,b=a.buyers[k]||0; const qp=qN?q/qN*100:0,bp=bN?b/bN*100:0;
-    return {k,q,b,qp,bp,idx:(qp>0?bp/qp:(bp>0?Infinity:0))}; }).filter(r=>r.q>0||r.b>0).sort((x,y)=>y.bp-x.bp);
+    `Categorizado por palavra-chave a partir da resposta livre "principal desafio". Compradoras: ${int(bN)} de ${int(vendas)} vendas do período casadas com o Typeform por e-mail (só as casadas entram aqui). Período: ${state.start.split('-').reverse().join('/')} → ${state.end.split('-').reverse().join('/')} · Dados de ${PF.generatedAtBR||'—'} (atualiza a cada 3h, junto com o tráfego).`;
+  // % de cada objeção + o que elas têm em comum (qualificadas do período) + raio-x ao clicar
+  const baseL=pfDist(L,PL_OFF);
+  const rows=PBK.map((k,i)=>{ const q=cL[i], b=cB[i], qp=qN?q/qN*100:0, bp=bN?b/bN*100:0;
+    return {k,i,q,b,qp,bp,idx:(qp>0?bp/qp:(bp>0?Infinity:0))}; }).filter(r=>r.q>0||r.b>0).sort((x,y)=>y.qp-x.qp||y.bp-x.bp);
   document.querySelector('#objTable thead').innerHTML=
-    '<tr><th>Objeção</th><th>Qualificados</th><th>Compradores</th><th>Índice de compra</th></tr>';
+    '<tr><th class="pf-name">Objeção</th><th>% das qualificadas</th><th>% das compradoras</th><th>Índice de compra</th><th class="pf-traits">O que elas têm em comum</th></tr>';
   document.querySelector('#objTable tbody').innerHTML=rows.map(r=>{
     let idxCell='—';
     if(isFinite(r.idx)&&r.idx>0){ const col=r.idx>=1.2?'var(--green)':(r.idx<=0.8?'var(--red)':'var(--muted)'); idxCell=`<b style="color:${col}">${r.idx.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}x</b>`; }
     else if(r.idx===Infinity){ idxCell='<b style="color:var(--green)">novo</b>'; }
-    return `<tr><td><span class="objdot" style="background:${objColor(r.k)}"></span>${objLabel(r.k)}</td>
-      <td>${pct(r.qp)} <span class="sub">(${int(r.q)})</span></td>
-      <td>${pct(r.bp)} <span class="sub">(${int(r.b)})</span></td>
-      <td>${idxCell}</td></tr>`;
-  }).join('');
-  renderObjVoices();
+    const grp=L.filter(x=>x[1]===r.i), open=pfOpen.obj.has(String(r.i));
+    const tr=`<tr class="pf-row${open?' open':''}" data-k="${r.i}"><td class="pf-name"><span class="pf-caret">▸</span><span class="objdot" style="background:${objColor(r.k)}"></span>${objLabel(r.k)}</td>
+      <td data-l="% das qualificadas">${shareCell(r.qp,r.q,objColor(r.k))}</td>
+      <td data-l="% das compradoras">${shareCell(r.bp,r.b,objColor(r.k))}</td>
+      <td data-l="Índice de compra">${idxCell}</td>
+      <td class="pf-traits" data-l="O que elas têm em comum">${traitsCell(pfTraits(grp,PL_OFF,baseL,4),'delas')}</td></tr>`;
+    return open ? tr+`<tr class="rx-row"><td colspan="5">${grp.length?raioX(grp,PL_OFF,baseL,'das qualificadas do período'):'<div class="sub">Nenhuma qualificada com essa objeção no período.</div>'}</td></tr>` : tr;
+  }).join('') || '<tr><td colspan="5" class="sub" style="text-align:left">Sem leads qualificadas no período selecionado.</td></tr>';
+  bindToggle('#objTable tbody',pfOpen.obj,renderObjections);
+  renderObjVoices(L);
 }
 
-function renderObjVoices(){
+// "micro" das objeções: o que as qualificadas DO PERÍODO escreveram (repetições + exemplos)
+function renderObjVoices(L){
   const box=document.getElementById('objVoices');
   if(!box) return;
-  const qs=OBJ.objQuotes||[];
-  if(!qs.length){ box.innerHTML='<div class="sub">Sem depoimentos.</div>'; return; }
-  box.innerHTML=qs.map((o,i)=>{
-    const terms=(o.terms||[]).map(x=>`<span class="termchip">${esc(x.t)} <b>×${x.n}</b></span>`).join('');
-    const ex=(o.examples||[]).map(q=>`<li>“${esc(q)}”</li>`).join('');
+  const T=arr(PF.T), byB=PBK.map(()=>new Map());
+  for(const r of L){ const t=r[PL_T]; if(t==null||t<0) continue; const m=byB[r[1]]; m.set(t,(m.get(t)||0)+1); }
+  const blocks=[];
+  PBK.forEach((k,i)=>{ const m=byB[i]; if(!m.size) return; let total=0; m.forEach(v=>{ total+=v; });
+    const terms=[...m.entries()].filter(e=>e[1]>=2).sort((a,b)=>b[1]-a[1]).slice(0,14);
+    const ex=[...m.keys()].map(t=>T[t]).filter(s=>s && s.length>=25).sort((a,b)=>b.length-a.length).slice(0,8);
+    blocks.push({k,total,distinct:m.size,terms,ex}); });
+  blocks.sort((a,b)=>b.total-a.total);
+  if(!blocks.length){ box.innerHTML='<div class="sub">Sem relatos de qualificadas no período selecionado.</div>'; return; }
+  box.innerHTML=blocks.map((o,i)=>{
+    const terms=o.terms.map(([t,n])=>`<span class="termchip">${esc(T[t])} <b>×${n}</b></span>`).join('');
+    const ex=o.ex.map(q=>`<li>“${esc(q)}”</li>`).join('');
     return `<details class="voice"${i===0?' open':''}>
-      <summary><span class="objdot" style="background:${objColor(o.bucket)}"></span>${objLabel(o.bucket)} <span class="sub">${int(o.total)} qualificadas · ${int(o.distinct)} relatos distintos</span></summary>
+      <summary><span class="objdot" style="background:${objColor(o.k)}"></span>${objLabel(o.k)} <span class="sub">${int(o.total)} qualificadas · ${int(o.distinct)} relatos distintos</span></summary>
       ${terms?`<div class="vblock"><div class="vlbl">Mais citados</div><div class="chips">${terms}</div></div>`:''}
       ${ex?`<div class="vblock"><div class="vlbl">Exemplos (na voz delas)</div><ul class="quotes">${ex}</ul></div>`:''}
     </details>`;
@@ -540,6 +657,8 @@ function render(){
   renderLeadsChart();
   renderSpendChart();
   renderObjections();
+  renderTempo();
+  renderPerfil();
 }
 
 // ===================== comercial (vendas por vendedora, period-aware) =====================
@@ -764,11 +883,26 @@ function bars(list,color){
 }
 function statCard(big,label,sub){ return `<div class="statc"><div class="statc-v">${big}</div><div class="statc-l">${label}</div>${sub?`<div class="statc-s">${sub}</div>`:''}</div>`; }
 
+// tempo até a compra das compras DO PERÍODO (dia da compra − 1º contato da lead)
+function tempoStats(B){
+  const ds=B.map(r=>r[0]-r[1]).filter(x=>x>=0).sort((a,b)=>a-b), n=ds.length;
+  if(!n) return {n:0};
+  const lbl=['Mesmo dia','1 a 3 dias','4 a 7 dias','8 a 14 dias','15 a 30 dias','31+ dias'], c=[0,0,0,0,0,0];
+  for(const d of ds){ c[d<=0?0:d<=3?1:d<=7?2:d<=14?3:d<=30?4:5]++; }
+  return { n, median:ds[Math.floor(n/2)], mean:ds.reduce((s,x)=>s+x,0)/n,
+    within3:Math.round(ds.filter(x=>x<=3).length/n*100), within7:Math.round(ds.filter(x=>x<=7).length/n*100),
+    buckets:lbl.map((l,i)=>({label:l,n:c[i],pct:c[i]/n*100})) };
+}
 function renderTempo(){
-  const T=ESTUDO.tempo||{}; if(!T.n){ return; }
-  const tail=(arr(T.buckets).find(x=>x.label==='31+ dias')||{}).pct||0;
+  const B=pfRows(PF.B,state.start,state.end), T=tempoStats(B), vendas=sumDaily(state.start,state.end).sales;
   document.getElementById('tempoIntro').innerHTML =
-    `Da data em que a lead entrou até a data da compra. Base: ${int(ESTUDO.buyersMatched)} compradoras casadas por e-mail (de ${int(ESTUDO.buyersTotal)} vendas). Atualiza a cada 3h.`;
+    `Da data em que a lead entrou até a data da compra, para as compras do período (${state.start.split('-').reverse().join('/')} → ${state.end.split('-').reverse().join('/')}). Base: ${int(T.n)} compradoras casadas por e-mail com o Typeform (de ${int(vendas)} vendas no período). Atualiza a cada 3h.`;
+  if(!T.n){
+    document.getElementById('tempoStats').innerHTML='';
+    document.getElementById('tempoBars').innerHTML='<div class="sub">Nenhuma compra casada com o Typeform no período selecionado.</div>';
+    document.getElementById('tempoNote').innerHTML=''; return;
+  }
+  const tail=(arr(T.buckets).find(x=>x.label==='31+ dias')||{}).pct||0;
   document.getElementById('tempoStats').innerHTML =
     statCard(`${int(T.median)}<span class="statc-u"> dias</span>`,'Mediana — metade compra antes disso') +
     statCard(`${int(T.mean)}<span class="statc-u"> dias</span>`,'Média — puxada pela cauda longa') +
@@ -777,24 +911,52 @@ function renderTempo(){
   document.getElementById('tempoBars').innerHTML = bars(T.buckets,'var(--blue)');
   document.getElementById('tempoNote').innerHTML =
     `<div class="chart-title">💡 O que fazer com isso</div>
-     <div class="ins-text">A decisão é <b>rápida</b>: metade das compradoras fecha em <b>até ${int(T.median)} dias</b> e <b>${int(T.within7)}%</b> em até uma semana. A janela de ouro é os <b>primeiros 7 dias</b> depois que a lead entra.</div>
+     <div class="ins-text">${T.median<=7?'A decisão é <b>rápida</b>':'Neste período a decisão está <b>mais lenta</b>'}: metade das compradoras fecha em <b>até ${int(T.median)} dias</b> e <b>${int(T.within7)}%</b> em até uma semana. A janela de ouro é os <b>primeiros 7 dias</b> depois que a lead entra.</div>
      <div class="ins-action">→ Concentre follow-up, contato do time e remarketing nos <b>primeiros 3–7 dias</b>. Mas mantenha um fluxo de nutrição longo: <b>${pct(tail)}</b> ainda compram com 31+ dias — sem ele você perde essas.</div>`;
 }
 function renderPerfil(){
-  const P=ESTUDO.perfil||{}; if(!P.fatDist){ return; }
+  const B=pfRows(PF.B,state.start,state.end), n=B.length, vendas=sumDaily(state.start,state.end).sales;
+  const per=`${state.start.split('-').reverse().join('/')} → ${state.end.split('-').reverse().join('/')}`;
   document.getElementById('perfilIntro').innerHTML =
-    `Quem são as ${int(ESTUDO.buyersMatched)} compradoras (cruzando e-mail comprador × base de leads). Só agregados e depoimentos anonimizados — nada de dado pessoal.`;
+    `Quem são as compradoras do período (${per}): cada compra cruzada por e-mail com as respostas do Typeform. <b>${int(n)} de ${int(vendas)}</b> vendas casadas (as demais não têm Typeform com o mesmo e-mail). Só agregados e depoimentos anonimizados — nada de dado pessoal. Dados de ${PF.generatedAtBR||'—'} (atualiza a cada 3h).`;
+  const grid=document.getElementById('pGrid'), tb=document.querySelector('#pObjTable tbody');
+  if(!n){
+    document.getElementById('perfilStats').innerHTML='';
+    document.querySelector('#pObjTable thead').innerHTML='';
+    tb.innerHTML='<tr><td class="sub" style="text-align:left">Nenhuma compra casada com o Typeform no período selecionado.</td></tr>';
+    grid.innerHTML=''; document.getElementById('pQuotes').innerHTML=''; return;
+  }
+  const d=pfDist(B,PB_OFF), T=tempoStats(B);
+  // faturamento médio estimado (meio de cada faixa) + ticket
+  const fi=PQS.findIndex(q=>q.k==='fat'); let fs=0, fn=0;
+  if(fi>=0){ PQS[fi].labels.forEach((L,li)=>{ const m=PQ_DEF.fat.mid[L]; if(m){ fs+=m*d[fi].c[li]; fn+=d[fi].c[li]; } }); }
+  const ticket=B.reduce((s,r)=>s+(r[3]||0),0)/n;
   document.getElementById('perfilStats').innerHTML =
-    statCard(`R$ ${(ESTUDO.fatMedia||0).toLocaleString('pt-BR')}`,'Faturamento médio /mês (estimado)') +
-    statCard(money(ESTUDO.ticket),'Ticket médio da compra') +
-    statCard(int(ESTUDO.buyersMatched),'Compradoras analisadas');
-  document.getElementById('pFat').innerHTML = bars(P.fatDist,'var(--green)');
-  document.getElementById('pVoce').innerHTML = bars(P.voce,'var(--blue2)');
-  document.getElementById('pIntent').innerHTML = bars(P.intent,'var(--navy)');
-  document.getElementById('pEquipe').innerHTML = bars(P.equipe,'var(--blue)');
-  document.getElementById('pObjec').innerHTML = bars(arr(P.objec).map(x=>({label:objLabel(x.label),n:x.n,pct:x.pct})),'var(--yellow)');
-  const qs=arr(P.quotes);
-  document.getElementById('pQuotes').innerHTML = qs.length ? `<ul class="quotes">${qs.map(q=>`<li>“${esc(q)}”</li>`).join('')}</ul>` : '';
+    statCard(int(n),'Compradoras analisadas',`de ${int(vendas)} vendas no período`) +
+    statCard(money(ticket),'Ticket médio da compra') +
+    statCard(fn?`R$ ${int(fs/fn)}`:'—','Faturamento médio /mês (estimado)','pelo meio de cada faixa') +
+    statCard(T.n?`${int(T.median)}<span class="statc-u"> dias</span>`:'—','Mediana até comprar','do 1º contato à compra');
+  // % de cada objeção entre as compradoras + o que elas têm em comum + raio-x ao clicar
+  const cB=bucketCount(B,2);
+  const rows=PBK.map((k,i)=>({k,i,b:cB[i],bp:cB[i]/n*100})).filter(r=>r.b>0).sort((x,y)=>y.b-x.b);
+  document.querySelector('#pObjTable thead').innerHTML='<tr><th class="pf-name">Principal desafio</th><th>% das compradoras</th><th class="pf-traits">O que elas têm em comum</th></tr>';
+  tb.innerHTML=rows.map(r=>{
+    const grp=B.filter(x=>x[2]===r.i), open=pfOpen.buy.has(String(r.i));
+    const tr=`<tr class="pf-row${open?' open':''}" data-k="${r.i}"><td class="pf-name"><span class="pf-caret">▸</span><span class="objdot" style="background:${objColor(r.k)}"></span>${objLabel(r.k)}</td>
+      <td data-l="% das compradoras">${shareCell(r.bp,r.b,objColor(r.k))}</td>
+      <td class="pf-traits" data-l="O que elas têm em comum">${traitsCell(pfTraits(grp,PB_OFF,d,4),'delas')}</td></tr>`;
+    return open ? tr+`<tr class="rx-row"><td colspan="3">${raioX(grp,PB_OFF,d,'das compradoras do período')}</td></tr>` : tr;
+  }).join('');
+  bindToggle('#pObjTable tbody',pfOpen.buy,renderPerfil);
+  // todas as perguntas do Typeform (as novas existem desde 23/08 -> mostra quantas responderam)
+  grid.innerHTML=PQS.map((q,i)=>{ const o=d[i]; const list=pfList(i,d);
+    const cov=(q.def.isNew||o.n<n) ? `<div class="q-cov">${int(o.n)} de ${int(n)} compradoras responderam${q.def.isNew?' (pergunta nova no Typeform)':''}${q.multi?' · uma resposta pode citar mais de um tema':''}</div>` : '';
+    return `<div class="card"><div class="chart-title">${q.def.icon} ${esc(q.def.label)}${q.def.isNew?'<span class="q-new">novo</span>':''}</div>${cov}<div class="objlist">${list.length?bars(list,q.def.color):'<div class="sub">Sem respostas no período.</div>'}</div></div>`;
+  }).join('');
+  // depoimentos das compradoras do período (mais recentes primeiro, sem repetir)
+  const Tx=arr(PF.T), seen=new Set(), qs=[];
+  for(const r of B.slice().sort((a,b)=>b[0]-a[0])){ const t=r[PB_T]; if(t==null||t<0||seen.has(t)) continue; seen.add(t); qs.push(Tx[t]); if(qs.length>=12) break; }
+  document.getElementById('pQuotes').innerHTML = qs.length ? `<ul class="quotes">${qs.map(q=>`<li>“${esc(q)}”</li>`).join('')}</ul>` : '<div class="sub">Sem depoimentos no período.</div>';
 }
 function renderApice(){
   const A=APICE; if(!A.fatDist){ return; }
@@ -883,7 +1045,7 @@ function init(){
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
   const PAGES=['funnel','sd','datas','obj','insights','comercial','bestads','tempo','perfil','apice','ascensao'];
-  const NOCTRL=['insights','tempo','perfil','apice','datas']; // abas de base completa (sem seletor de período); comercial, bestads, sd e ascensao usam o seletor
+  const NOCTRL=['insights','apice','datas']; // abas de base completa (sem seletor de período); obj, tempo, perfil, comercial, bestads, sd e ascensao usam o seletor
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
     const pg=b.dataset.page;
@@ -898,7 +1060,7 @@ function init(){
   document.getElementById('goalInput').onchange=e=>{ localStorage.setItem('ccn_goal',e.target.value||15000); render(); };
   const [s,e]=lastN(30); setRange(s,e);
   renderInsights();
-  renderTempo(); renderPerfil(); renderApice(); renderDatas();
+  renderApice(); renderDatas();
   const hash=location.hash.toLowerCase();
   if(hash.includes('insight')){ document.querySelector('.pagebtn[data-page="insights"]').click(); }
   else if(hash.includes('obj')){ document.querySelector('.pagebtn[data-page="obj"]').click(); }

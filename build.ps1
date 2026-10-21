@@ -9,8 +9,9 @@
 #    traffic    -> data.js          (funil)      cron 3h
 #    objections -> data-obj.js      (objecoes)   cron diario
 #    insights   -> data-insights.js (insights)   cron semanal
+#    perfil     -> data-perfil.js   (objecoes/compradoras/tempo POR PESSOA, filtravel por data) — tambem sai em all/estudo
 #    all        -> os 3 (uso local/manual)
-param([ValidateSet('all','traffic','objections','insights','estudo','apice','ascensao','datas')][string]$Mode='all')
+param([ValidateSet('all','traffic','objections','insights','estudo','apice','ascensao','datas','perfil')][string]$Mode='all')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $BR = [Globalization.CultureInfo]::GetCultureInfo('pt-BR')
@@ -104,16 +105,17 @@ function IsQualForms($fat,$voce){ $f=FatNormForms $fat; $v=Deaccent (Norm $voce)
 # finder de cabecalho do forms (headers com underscore/acento/"?"): deaccent + (_?-> espaco) + -like
 function FHdr($hdr,$pat){ for($i=0;$i -lt $hdr.Count;$i++){ $h=(((Deaccent (Norm $hdr[$i])) -replace '[_\?]+',' ').Trim()); if($h -like $pat){ return $i } }; return -1 }
 $OBJ_BUCKETS = @(
-  @('Equipe & Pessoas',       @('equipe','pessoa','mao de obra','colaborador','funcionario','contrat','lider','recursos humanos')),
-  @('Delegacao & Escala',     @('deleg','escal','cresc','expand','expans','sair da operac','depend','sozinh','dono faz','centraliz','sobrecarg','estagn')),
-  @('Financeiro & Capital',   @('financ','dinheiro','capital','fluxo de caixa','caixa','lucro','custo','precific','investiment',' giro','endivid','divida','inadimpl','preco')),
-  @('Vendas & Clientes',      @('vend','client','captac','captar','prospec','fechar','convert','faturament','faturar','negocia','funil','orcament','comercial')),
-  @('Marketing & Divulgacao', @('marketing','divulg','trafego','anunci','publicidad','digital','posicion','branding','rede social','redes sociais','instagram','alcance','visibilidade','seguidor','conteudo','comunica','reconheci')),
+  # (out/2026: + palavras das respostas recentes que caiam em "Outros": ganhar mais/ampliar/plato, publico alvo, imposto/tributos, socios, governo...)
+  @('Equipe & Pessoas',       @('equipe','pessoa','mao de obra','mao obra','colaborador','funcionario','contrat','lider','recursos humanos','socio','socia','profissionais')),
+  @('Delegacao & Escala',     @('deleg','escal','cresc','expand','expans','sair da operac','depend','sozinh','dono faz','centraliz','sobrecarg','estagn','ganhar mais','ampli','avanc','alavanc','plato','prosper','proximo nivel','milhao','milhoes')),
+  @('Financeiro & Capital',   @('financ','dinheiro','capital','fluxo de caixa','caixa','lucro','custo','precific','investiment',' giro','endivid','divida','inadimpl','preco','imposto','tribut','contas','ticket','cobrar','margem','juros')),
+  @('Vendas & Clientes',      @('vend','client','captac','captar','prospec','fechar','fechament','convert','faturament','faturar','negocia','funil','orcament','comercial')),
+  @('Marketing & Divulgacao', @('marketing','divulg','trafego','anunci','publicidad','digital','posicion','branding','rede social','redes sociais','instagram','alcance','visibilidade','seguidor','conteudo','comunica','reconheci','publico','atrair','atracao')),
   @('Gestao & Organizacao',   @('gest','organiz','administr','process','controle','tempo','rotina','planejament','sistema','estrutur')),
-  @('Estrategia & Direcao',   @('estrateg','direcionament','direcao','clareza','conheciment','rumo')),
-  @('Mindset & Constancia',   @('medo','consist','constan','discipl','foco','mindset','inseguran','autoconf','procrastin','ansiedad','acredit','autoestima','motiva','coragem','desanim')),
-  @('Concorrencia & Mercado', @('concorr','mercado','crise','economi','sazonal')),
-  @('Produto & Operacao',     @('produt','estoque','operac','qualidade','entrega','logistic','fornecedor','servico')),
+  @('Estrategia & Direcao',   @('estrateg','direcionament','direcao','direcion','clareza','conheciment','rumo','visao','perspectiva','descobrir','inova','novo negocio','transicao')),
+  @('Mindset & Constancia',   @('medo','consist','constan','discipl','foco','mindset','inseguran','autoconf','procrastin','ansiedad','acredit','autoestima','motiva','coragem','desanim','emocional','ousar','ousad','atitude','paradigma','me encontrar','trava','limitant')),
+  @('Concorrencia & Mercado', @('concorr','mercado','crise','economi','sazonal','governo','cenario')),
+  @('Produto & Operacao',     @('produt','estoque','operac','qualidade','entrega','logistic','fornecedor','servico','espaco fisico','atendimento','tecnica')),
   @('Sem empresa / Inicio',   @('nao tenho empresa','sem empresa','comecar','comec','abrir empresa','iniciante','ainda nao','nao tenho','clt','salario','emprego','eu mesma'))
 )
 $OBJ_ORDER = @($OBJ_BUCKETS | ForEach-Object { $_[0] }) + 'Outros'
@@ -509,8 +511,10 @@ AddIns @{type='funnel_convlp';cat='funil';tone=$tnLP;convlp=$convlp}
 #  ESTUDO DAS COMPRADORAS — 3 abas: tempo de compra, perfil, sinal
 #  (só agregados/anonimizado; e-mail usado só p/ casar, nunca publicado)
 # ===================================================================
-$FAT_ORDER=@('Menos de R$ 5 mil','Entre R$ 5 mil e R$ 10 mil','Entre R$ 10 mil e R$ 50 mil','Entre R$ 50 mil e R$ 100 mil','Entre R$ 100 mil e R$ 200 mil','Acima de 200 mil')
-$FAT_MID=@{'Menos de R$ 5 mil'=2500;'Entre R$ 5 mil e R$ 10 mil'=7500;'Entre R$ 10 mil e R$ 50 mil'=30000;'Entre R$ 50 mil e R$ 100 mil'=75000;'Entre R$ 100 mil e R$ 200 mil'=150000;'Acima de 200 mil'=300000}
+# inclui as opcoes NOVAS do Typeform (~22/08: "Menos de 100mil", "De 100k a 300k"...) — sem elas as compradoras recentes sumiam da distribuicao
+$FAT_ORDER=@('Menos de R$ 5 mil','Entre R$ 5 mil e R$ 10 mil','Entre R$ 10 mil e R$ 50 mil','Entre R$ 50 mil e R$ 100 mil','Menos de 100mil','Entre R$ 100 mil e R$ 200 mil','De 100k a 300k','Acima de 200 mil','De 300k a 500k','De 500k a 1M','Acima de 1M')
+$FAT_MID=@{'Menos de R$ 5 mil'=2500;'Entre R$ 5 mil e R$ 10 mil'=7500;'Entre R$ 10 mil e R$ 50 mil'=30000;'Entre R$ 50 mil e R$ 100 mil'=75000;'Menos de 100mil'=50000;'Entre R$ 100 mil e R$ 200 mil'=150000;'De 100k a 300k'=200000;'Acima de 200 mil'=300000;'De 300k a 500k'=400000;'De 500k a 1M'=750000;'Acima de 1M'=1200000}
+$EQ_ORDER=@('1','05','2-7','De 06 a 20','8-15','16-50','De 21 a 50','50+','Acima de 50')
 # lead mais ANTIGO por e-mail (primeiro contato) com os campos do estudo
 $leadStudy=@{}
 foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); if($e -eq ''){continue}; $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){continue}
@@ -539,7 +543,7 @@ function DistArr($prop,$order){ $h=@{}; foreach($b in $buyers){ $v=CleanOpt $b.$
 $fatDist=DistArr 'fat' $FAT_ORDER
 $voceDist=DistArr 'voce' $null
 $intentDist=DistArr 'intent' $null
-$eqDist=DistArr 'eq' @('1','2-7','8-15','16-50','50+')
+$eqDist=DistArr 'eq' $EQ_ORDER
 $fatV=@($buyers | Where-Object {$FAT_MID.ContainsKey($_.fat)} | ForEach-Object {$FAT_MID[$_.fat]})
 $fatMedia=0; if($fatV.Count){$fatMedia=[math]::Round(($fatV|Measure-Object -Average).Average,0)}
 $ticket=0.0; if($nB){$ticket=[math]::Round((@($buyers|ForEach-Object{$_.rev})|Measure-Object -Sum).Sum/$nB,2)}
@@ -555,6 +559,121 @@ $estudo=[pscustomobject]@{
   generatedAt=$nowIso; generatedAtBR=$nowBR; buyersTotal=$paidCount; buyersMatched=$nB; ticket=$ticket; fatMedia=$fatMedia
   tempo=[pscustomobject]@{n=$dpos.Count;mean=$tMean;median=$tMed;within3=$w3;within7=$w7;buckets=@($tempoBk)}
   perfil=[pscustomobject]@{fatDist=@($fatDist);voce=@($voceDist);intent=@($intentDist);equipe=@($eqDist);objec=@($objDist);quotes=@($quotes)}
+}
+
+# ===================================================================
+#  PERFIL POR PESSOA (data-perfil.js) -> abas Objecoes, Compradoras e Tempo de compra
+#  1 linha por lead QUALIFICADA (data do lead) e 1 por COMPRA (data da compra), com a resposta de
+#  CADA pergunta do Typeform como indice de opcao. O front agrega pelo PERIODO do seletor (antes era
+#  base completa, sem filtro de data). Perguntas novas (estado civil, filhos, margem, fe, o que busca
+#  construir — desde 23/08) entram aqui. Rotulos com acento ficam no app.js (este arquivo nao tem BOM:
+#  literal nao-ASCII quebra no PS5.1); aqui so o texto cru da planilha + chaves ASCII.
+#  SEM PII: nome/e-mail/telefone/@/"Parceiro" (a resposta e o NOME do parceiro) nao saem.
+# ===================================================================
+if($Mode -eq 'all' -or $Mode -eq 'estudo' -or $Mode -eq 'perfil'){   # NAO no modo objections: o workflow diario so commita data-obj.js (arquivo extra sujo quebraria o pull --rebase)
+$pSw=[Diagnostics.Stopwatch]::StartNew()
+$L_CIVIL=HdrLike $lh '*Estado civil*'; $L_FILHOS=HdrLike $lh 'Filhos*'; $L_MARGEM=HdrLike $lh '*Margem de lucro*'
+$L_FE=HdrLike $lh 'F*Religi*'; $L_BUSCA=HdrLike $lh '*busca construir*'; $L_PRES=HdrLike $lh '*presencialmente*'
+$PQ=@('fat','voce','eq','margem','civil','filhos','fe','intent','freq','pres','busca')
+$PCOL=@{fat=$L_FAT;voce=$L_VOCE;eq=$L_EQ;margem=$L_MARGEM;civil=$L_CIVIL;filhos=$L_FILHOS;fe=$L_FE;intent=$L_INTENT;freq=$L_FREQ;pres=$L_PRES;busca=$L_BUSCA}
+# "O que busca construir" (texto livre) -> temas por palavra-chave, MULTI (bitmask: uma resposta pode citar varios)
+$BUSCA_B=@(
+  @('network', @('network','conex','relacionament','parceri','troca','trocar','contato','comunidade','ambiente','ambiencia','mulheres','pessoas')),
+  @('cresc',   @('cresc','escal','expan','alavanc','faturament','faturar','ampli','multiplic','estourar','vend','lucr','resultado','dobrar','clientes')),
+  @('estrut',  @('estrutur','gest','organiz','process','equipe','lider','operacional','deleg','sistema','consolid','profissionaliz','sustentav','solid')),
+  @('posic',   @('posicion','autoridade','referencia','marca','imagem','reconhec','visibil','case','influenc','destaque')),
+  @('estrat',  @('estrateg','clareza','visao','direcion','plano','proximo passo','metodo','caminho','planejament','rumo')),
+  @('aprend',  @('aprend','conhecim','desenvolv','aperfei','capacit','evolu','experienc','mentoria','estudo','ensina')),
+  @('mente',   @('mente','mentalidade','confian','crenc','medo','empoder','coragem','destrav','desbloq','blind','autoestima','seguranca','disciplin','foco','motiva')),
+  @('legado',  @('legado','familia','filho','qualidade de vida','liberdade','tempo','mudanca de vida','sonho','independ','proposito','impacto','historia','felicidade','paz')),
+  @('financ',  @('financ','patrimon','dinheiro','caixa','riqueza','investiment','rentab','renda'))
+)
+$BUSCA_RX=@(); foreach($b in $BUSCA_B){ $BUSCA_RX += [regex]('\b(' + (($b[1] | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')') }   # \b = inicio de palavra ("paz" nao casa "capaz")
+$BUSCA_OUT=$BUSCA_B.Count   # bit "outro": respondeu algo sem tema reconhecido
+function BuscaMask($raw){ $t=Deaccent (Norm $raw); if(($t -replace '[^a-z]','').Length -lt 3){ return -1 }
+  $m=0; for($i=0;$i -lt $script:BUSCA_RX.Count;$i++){ if($script:BUSCA_RX[$i].IsMatch($t)){ $m = $m -bor (1 -shl $i) } }
+  if($m -eq 0){ $m = 1 -shl $script:BUSCA_OUT }; return $m }
+# "Filhos" (texto livre: "Sim, 2", "nao", "uma filha"...) -> nao / 1 / 2 / 3+ / sim (tem, sem dizer quantos)
+function FilhosKey($raw){ $t=((Deaccent (Norm $raw)) -replace '[^a-z0-9 ]',' ' -replace '\s+',' ').Trim(); if($t -eq ''){ return '' }
+  $n=-1
+  if($t -match '\b(\d{1,2})\b'){ $n=[int]$Matches[1] }
+  elseif($t -match '\b(um|uma)\b'){ $n=1 } elseif($t -match '\b(dois|duas)\b'){ $n=2 } elseif($t -match '\b(tres|quatro|cinco|seis)\b'){ $n=3 }
+  if($n -eq 0){ return 'nao' }
+  if($n -ge 1 -and $n -le 15){ if($n -ge 3){ return '3+' }; return [string]$n }
+  if($t -match '^(nao|n|no|nenhum|nenhuma|zero)\b' -or $t -match '^ainda nao'){ return 'nao' }
+  if($t -match '^(sim|s|si|tenho)\b' -or $t -match 'filh'){ return 'sim' }
+  return '' }
+# resposta crua -> indice da opcao (cache por texto cru; opcoes novas entram sozinhas no fim da lista)
+$PQOPT=@{}; $PQRAW=@{}; $PQCACHE=@{}
+foreach($qk in $PQ){ $PQOPT[$qk]=@{}; $PQRAW[$qk]=New-Object System.Collections.Generic.List[string]; $PQCACHE[$qk]=@{} }
+function PAns($qk,$raw){ $raw=Norm $raw; if($raw -eq ''){ return -1 }
+  $cache=$script:PQCACHE[$qk]; if($cache.ContainsKey($raw)){ return $cache[$raw] }
+  if($qk -eq 'busca'){ $v=BuscaMask $raw }
+  else{
+    if($qk -eq 'filhos'){ $k=FilhosKey $raw; $disp=$k } else { $disp=CleanOpt $raw; $k=((Deaccent $disp) -replace '\s+',' ').Trim() }
+    if($k -eq ''){ $v=-1 } else { $h=$script:PQOPT[$qk]; if(-not $h.ContainsKey($k)){ $h[$k]=$script:PQRAW[$qk].Count; $script:PQRAW[$qk].Add($disp) }; $v=$h[$k] } }
+  $cache[$raw]=$v; return $v }
+function PAnswers($r){ $a=New-Object int[] $script:PQ.Count
+  for($i=0;$i -lt $script:PQ.Count;$i++){ $c=$script:PCOL[$script:PQ[$i]]; if($c -lt 0 -or $c -ge $r.Count){ $a[$i]=-1 } else { $a[$i]=PAns $script:PQ[$i] $r[$c] } }
+  return ,$a }
+# textos livres ("principal desafio"): dicionario unico, mesmo filtro anti-PII dos verbatims
+$PTXT=New-Object System.Collections.Generic.List[string]; $PTIDX=@{}
+function PTxt($t,$min,$minUniq){ if($t.Length -lt $min -or $t.Length -gt 160){ return -1 }
+  if($t -match '@' -or $t -match 'http' -or $t -match '\d{4,}'){ return -1 }
+  $cx=($t.ToLower() -replace '\s',''); if(([System.Collections.Generic.HashSet[char]]::new([char[]]$cx.ToCharArray())).Count -le $minUniq){ return -1 }
+  if($script:PTIDX.ContainsKey($t)){ return $script:PTIDX[$t] }; $i=$script:PTXT.Count; $script:PTXT.Add($t); $script:PTIDX[$t]=$i; return $i }
+$PBIDX=@{}; for($i=0;$i -lt $OBJ_ORDER.Count;$i++){ $PBIDX[$OBJ_ORDER[$i]]=$i }
+$PDAY=@{}
+function PDay($d){ if(-not $script:PDAY.ContainsKey($d)){ $script:PDAY[$d]=([datetime]::ParseExact($d,'yyyy-MM-dd',$null) - $script:P_D0).Days }; return $script:PDAY[$d] }
+
+# typeform por e-mail (todas as linhas datadas) + leads qualificadas
+$pByEmail=@{}; $pLeadRows=New-Object System.Collections.Generic.List[object]
+foreach($r in $ld){ $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){continue}
+  $e=(Norm $r[$L_EMAIL]).ToLower()
+  if($e -ne ''){ if(-not $pByEmail.ContainsKey($e)){ $pByEmail[$e]=New-Object System.Collections.Generic.List[object] }; $pByEmail[$e].Add($r) }
+  if(IsQual $r[$L_FAT] $r[$L_VOCE]){ $pLeadRows.Add($r) } }
+# compras (kiwify paga + extras do controle manual; cancelada fora) casadas com o typeform por e-mail.
+# Perfil = ultima resposta ATE a data da compra (senao a mais antiga); 1o contato = resposta mais antiga.
+# Pergunta em branco na linha escolhida (ex.: as novas so existem desde 23/08) -> pega de outra linha da mesma pessoa.
+$pBuy=New-Object System.Collections.Generic.List[object]
+function PBuyer($e,$d,$rev){ if($e -eq '' -or -not $script:pByEmail.ContainsKey($e)){ return }
+  $rs=$script:pByEmail[$e]; $first=$null; $pick=$null; $fd=''; $pd=''
+  foreach($x in $rs){ $xd=Norm $x[$script:L_DATE]
+    if($null -eq $first -or $xd -lt $fd){ $first=$x; $fd=$xd }
+    if($xd -le $d -and ($null -eq $pick -or $xd -ge $pd)){ $pick=$x; $pd=$xd } }
+  if($null -eq $pick){ $pick=$first }
+  $a=PAnswers $pick
+  for($i=0;$i -lt $a.Count;$i++){ if($a[$i] -ge 0){continue}; $c=$script:PCOL[$script:PQ[$i]]; if($c -lt 0){continue}
+    foreach($x in $rs){ if($c -ge $x.Count){continue}; $v=PAns $script:PQ[$i] $x[$c]; if($v -ge 0){ $a[$i]=$v } } }
+  $des=Norm $pick[$script:L_DESAFIO]; if($des -eq ''){ foreach($x in $rs){ $t=Norm $x[$script:L_DESAFIO]; if($t -ne ''){ $des=$t } } }
+  $script:pBuy.Add([pscustomobject]@{d=$d;first=$fd;b=(Bucket $des);rev=$rev;a=$a;des=$des}) }
+foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
+  $e=(Norm $r[$K_EMAIL]).ToLower(); if($vendaExclE.ContainsKey($e)){continue}; $nk=NameKey $r[$K_NOME]; if($nk -match ' ' -and $vendaExclN.ContainsKey($nk)){continue}
+  PBuyer $e $d (MoneyKiwify $r[$K_REV]) }
+foreach($x in $extras){ PBuyer $x.email $x.date $x.valor }
+
+# dia 0 = data mais antiga usada; datas viram inteiros (arquivo menor)
+$P_D0s='9999-12-31'
+foreach($r in $pLeadRows){ $x=Norm $r[$L_DATE]; if($x -lt $P_D0s){ $P_D0s=$x } }
+foreach($b in $pBuy){ if($b.d -lt $P_D0s){ $P_D0s=$b.d }; if($b.first -lt $P_D0s){ $P_D0s=$b.first } }
+$P_D0=[datetime]::ParseExact($P_D0s,'yyyy-MM-dd',$null)
+$pL=New-Object System.Collections.Generic.List[string]
+foreach($r in $pLeadRows){
+  $a=PAnswers $r; $t=PTxt (Norm $r[$L_DESAFIO]) 3 1
+  $pL.Add('[' + (PDay (Norm $r[$L_DATE])) + ',' + $PBIDX[(Bucket $r[$L_DESAFIO])] + ',' + ($a -join ',') + ',' + $t + ']') }
+$pB=New-Object System.Collections.Generic.List[string]
+foreach($b in $pBuy){ $t=PTxt $b.des 22 4
+  $pB.Add('[' + (PDay $b.d) + ',' + (PDay $b.first) + ',' + $PBIDX[$b.b] + ',' + [math]::Round($b.rev,0) + ',' + ($b.a -join ',') + ',' + $t + ']') }
+$qDefs=@(); foreach($qk in $PQ){   # ⚠️ nome != $PQ (variavel do PS e case-insensitive: $pQ seria a MESMA)
+  if($qk -eq 'busca'){ $o=@($BUSCA_B | ForEach-Object { $_[0] }) + 'outro' } else { $o=@($PQRAW[$qk].ToArray()) }
+  $qDefs += [pscustomobject]@{k=$qk;multi=($qk -eq 'busca');col=($PCOL[$qk] -ge 0);o=[object[]]$o} }
+$perfilJson='{"generatedAt":"'+$nowIso+'","generatedAtBR":"'+$nowBR+'","d0":"'+$P_D0s+'"' +
+  ',"buckets":' + (ConvertTo-Json -InputObject ([object[]]$OBJ_ORDER) -Compress) +
+  ',"q":' + (ConvertTo-Json -InputObject ([object[]]$qDefs) -Depth 4 -Compress) +
+  ',"L":[' + ($pL -join ',') + '],"B":[' + ($pB -join ',') + ']' +
+  ',"T":' + (ConvertTo-Json -InputObject ([object[]]$PTXT.ToArray()) -Compress) + '}'
+[IO.File]::WriteAllText((Join-Path $root 'data-perfil.js'), ("window.DASH_PERFIL="+$perfilJson+";"), [System.Text.UTF8Encoding]::new($false))
+Write-Host ("PERFIL: {0} qualificadas | {1} compras casadas c/ typeform | {2} textos | d0={3} | cols novas: civil={4} filhos={5} margem={6} fe={7} busca={8} pres={9} | {10}s" -f $pLeadRows.Count,$pBuy.Count,$PTXT.Count,$P_D0s,$L_CIVIL,$L_FILHOS,$L_MARGEM,$L_FE,$L_BUSCA,$L_PRES,[int]$pSw.Elapsed.TotalSeconds)
 }
 
 # ===================================================================
@@ -592,7 +711,7 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
     if($t -match '@' -or $t -match 'http' -or $t -match '\d{4,}'){continue}
     $cx=($t.ToLower() -replace '\s',''); if(($cx.ToCharArray()|Select-Object -Unique).Count -le 4){continue}; $aqc+=$t }
   $apQuotes=@($aqc | Select-Object -Unique | Select-Object -First 16)
-  $apFat=ADist $coh 'fat' $FAT_ORDER; $apVoce=ADist $coh 'voce' $null; $apInt=ADist $coh 'intent' $null; $apEq=ADist $coh 'eq' @('1','2-7','8-15','16-50','50+')
+  $apFat=ADist $coh 'fat' $FAT_ORDER; $apVoce=ADist $coh 'voce' $null; $apInt=ADist $coh 'intent' $null; $apEq=ADist $coh 'eq' $EQ_ORDER
   $apice=[pscustomobject]@{
     generatedAt=$nowIso; generatedAtBR=$nowBR
     totalApice=$nAp; matched=$nC; matchedEmail=$mEmail; matchedName=$mName; qualified=($coh|Where-Object{ IsQual $_.fat $_.voce }).Count; fatMedia=$apFatMedia
