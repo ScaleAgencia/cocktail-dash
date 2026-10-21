@@ -131,30 +131,26 @@
   </div><!--/pageSd-->
 
   <div id="pageObj" hidden>
-    <div class="card">
-      <div class="chart-title">Objeções — "principal desafio" das leads (pelo período selecionado)</div>
+    <div class="card aud-head">
+      <div class="aud-top">
+        <div class="chart-title">🧠 Objeções e estudo do perfil — escolha quem ver</div>
+        <div class="seg" id="objAud" role="tablist">
+          <button type="button" data-aud="qlf" role="tab">👩‍💼 Leads qualificadas <span class="seg-n" id="audQlfN"></span></button>
+          <button type="button" data-aud="buy" role="tab">🛍️ Compradoras <span class="seg-n" id="audBuyN"></span></button>
+        </div>
+      </div>
       <div class="micro-note" id="objNote">—</div>
     </div>
-    <div class="obj-grid">
-      <div class="card">
-        <div class="chart-title">Leads Qualificadas <span class="sub" id="objQlfN"></span></div>
-        <div id="objQlf" class="objlist"></div>
-      </div>
-      <div class="card">
-        <div class="chart-title">Compradoras <span class="sub" id="objBuyN"></span></div>
-        <div id="objBuy" class="objlist"></div>
-      </div>
-    </div>
     <div class="card">
-      <div class="chart-title">🧬 Cada objeção: quanto pesa e o que elas têm em comum</div>
-      <div class="micro-note pf-help"><b>O que elas têm em comum</b> = as respostas do Typeform que mais aparecem entre as qualificadas com aquela objeção. <span class="trait up" style="font-size:11px;padding:1px 7px"><i>↑ 1,4x</i></span> = acima da média das qualificadas do período. <b>Clique numa linha</b> para abrir o raio-x com todas as perguntas.</div>
+      <div class="chart-title" id="objTblTitle">🧬 Objeções: quanto pesa cada uma e o que elas têm em comum</div>
+      <div class="micro-note pf-help" id="objHelp"></div>
       <div class="table-scroll pf-scroll"><table id="objTable" class="pf-table"><thead></thead><tbody></tbody></table></div>
-      <div class="micro-note">Índice de compra = % entre compradoras ÷ % entre qualificadas. Acima de 1,0 = essa objeção aparece mais entre quem compra (converte melhor).</div>
     </div>
-
+    <div class="card sec-card"><div class="chart-title" id="objGridTitle">📋 Estudo do perfil</div><div class="micro-note" id="objGridNote"></div></div>
+    <div class="perfil-grid" id="objGrid"></div>
     <div class="card">
-      <div class="chart-title">O que as qualificadas relatam — na voz delas</div>
-      <div class="micro-note">Respostas reais do campo "principal desafio" das qualificadas do período selecionado (anonimizado — sem nome/e-mail/telefone). Clique numa objeção para expandir.</div>
+      <div class="chart-title" id="objVoiceTitle">O que elas relatam — na voz delas</div>
+      <div class="micro-note" id="objVoiceNote"></div>
       <div id="objVoices" class="voices"></div>
     </div>
   </div>
@@ -230,15 +226,15 @@
     </div>
     <div class="stat-row" id="apiceStats"></div>
     <div class="card note-card" id="apiceNote"></div>
-    <div class="perfil-grid">
-      <div class="card"><div class="chart-title">Faturamento mensal</div><div id="aFat" class="objlist"></div></div>
-      <div class="card"><div class="chart-title">Perfil profissional</div><div id="aVoce" class="objlist"></div></div>
-      <div class="card"><div class="chart-title">Intenção de pagamento</div><div id="aIntent" class="objlist"></div></div>
-      <div class="card"><div class="chart-title">Tamanho da equipe</div><div id="aEquipe" class="objlist"></div></div>
+    <div class="card">
+      <div class="chart-title">🧬 Principal desafio das participantes do Ápice: quanto pesa e o que elas têm em comum</div>
+      <div class="micro-note pf-help"><b>O que elas têm em comum</b> = as respostas do Typeform que mais aparecem entre as participantes com aquele desafio. <span class="trait up" style="font-size:11px;padding:1px 7px"><i>↑ 1,4x</i></span> = acima da média das participantes do Ápice. <b>Clique numa linha</b> para abrir o raio-x com todas as perguntas.</div>
+      <div class="table-scroll pf-scroll"><table id="aObjTable" class="pf-table"><thead></thead><tbody></tbody></table></div>
     </div>
-    <div class="card"><div class="chart-title">O que elas relatam como principal desafio</div>
-      <div class="micro-note">Objeções da coorte (categoria) + depoimentos reais anonimizados (sem nome/e-mail/telefone).</div>
-      <div id="aObjec" class="objlist"></div>
+    <div class="card sec-card"><div class="chart-title">📋 Estudo do perfil das participantes do Ápice</div><div class="micro-note">Todas as perguntas do Typeform (as marcadas como novo só existem desde 23/08, por isso nem todas responderam).</div></div>
+    <div class="perfil-grid" id="aGrid"></div>
+    <div class="card"><div class="chart-title">Na voz delas — o principal desafio das participantes do Ápice</div>
+      <div class="micro-note">Depoimentos reais do campo "principal desafio", anonimizados (sem nome/e-mail/telefone).</div>
       <div id="aQuotes" class="voices" style="margin-top:12px"></div>
     </div>
   </div>
@@ -291,7 +287,7 @@
 <script>
   // carrega os dados + app sempre frescos (cache-bust por timestamp) — F5 normal ja mostra o ultimo
   (function(){ var v = Date.now();
-    ['data.js','data-perfil.js','data-insights.js','data-apice.js','data-ascensao.js','data-datas.js','app.js'].forEach(function(f){
+    ['data.js','data-perfil.js','data-insights.js','data-ascensao.js','data-datas.js','app.js'].forEach(function(f){
       document.write('<script src="' + f + '?t=' + v + '"><\/script>');
     });
   })();

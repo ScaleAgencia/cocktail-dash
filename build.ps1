@@ -562,6 +562,39 @@ $estudo=[pscustomobject]@{
 }
 
 # ===================================================================
+#  LISTA DO APICE (participantes) — usada pela aba Apice, pela Ascensao e pelo perfil por pessoa
+#  Planilha REAL de participantes (ago/2026). Colunas [0]=nome [1]=email, sem cabecalho. Ticket R$150k.
+#  ⚠️ Linhas AMARELAS (fill FFF2CC) = DESCONSIDERAR (pedido do cliente). gviz/CSV nao traz cor -> le o
+#  export XLSX a cada build (cliente pinta/despinta e a dash acompanha sozinha). Se o XLSX falhar, usa a
+#  lista fixa abaixo (29 amarelas de 113 em out/2026 -> 84 participantes).
+# ===================================================================
+$apList=@(); $apYellowAuto=$false
+if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao' -or $Mode -eq 'estudo' -or $Mode -eq 'perfil'){
+  $APICE_ID='19Ee8ZK6yXk3D1DUssv3ASjS76rIAOqhDOLic2yfYQ1Q'
+  $APICE_EXCLUDE=@{}
+  try{
+    $axl=Join-Path $dataDir 'apice.xlsx'; (New-Object System.Net.WebClient).DownloadFile("https://docs.google.com/spreadsheets/d/$APICE_ID/export?format=xlsx",$axl)
+    $adir=Join-Path $dataDir 'apice_x'; if(Test-Path $adir){Remove-Item $adir -Recurse -Force}
+    Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($axl,$adir)
+    $stA=[xml](Get-Content "$adir\xl\styles.xml" -Raw -Encoding UTF8)
+    $yIds=@{}; $fi=0; foreach($f in $stA.styleSheet.fills.fill){ $rgb=''; if($f.patternFill.fgColor){$rgb=$f.patternFill.fgColor.rgb}; if($rgb -eq 'FFFFF2CC'){$yIds[$fi]=1}; $fi++ }
+    $xfA=@(); foreach($xf in $stA.styleSheet.cellXfs.xf){ $xfA+=[int]$xf.fillId }
+    $ssA=@(); if(Test-Path "$adir\xl\sharedStrings.xml"){ $sxA=[xml](Get-Content "$adir\xl\sharedStrings.xml" -Raw -Encoding UTF8); foreach($si in $sxA.sst.si){ $t=''; if($si.t){ if($si.t.'#text'){$t=$si.t.'#text'}else{$t=[string]$si.t} } elseif($si.r){ $t=($si.r|ForEach-Object{[string]$_.t}) -join '' }; $ssA+=$t } }
+    $wsA=[xml](Get-Content "$adir\xl\worksheets\sheet1.xml" -Raw -Encoding UTF8)
+    $nRowsA=0
+    foreach($row in $wsA.worksheet.sheetData.row){ $isY=$false; $em=''
+      foreach($c in $row.c){ $sx=0; if($c.s){$sx=[int]$c.s}; if($yIds.ContainsKey($xfA[$sx])){$isY=$true}
+        $val=''; if($c.t -eq 's'){ if($null -ne $c.v){$val=$ssA[[int]$c.v]} } elseif($null -ne $c.v){$val=[string]$c.v}; if($val -match '@'){$em=(Norm $val).ToLower()} }
+      if($em -match '@'){ $nRowsA++; if($isY){ $APICE_EXCLUDE[$em]=1 } } }
+    if($nRowsA -gt 0){ $apYellowAuto=$true }
+  }catch{ $APICE_EXCLUDE=@{}; $apYellowAuto=$false }
+  if(-not $apYellowAuto){ foreach($e in @('alinedraghifr@hotmail.com','andressahuve@gmail.com','brenda.fagundes@outlook.com','brunagrupobm@gmail.com','clickgo.viagens@gmail.com','clubedadisney@gmail.com','consultoriadenegociospt@gmail.com','contato.larissasteimbach@gmail.com','cristianekassim@gmail.com','daniela_vieiraloura@hotmail.com','denise0407@me.com','emanuella.pereirasantos@hotmail.com','fefreitas02@gmail.com','fernaroque@hotmail.com','francisdias@acerterh.com.br','kerastinni@gmail.com','larissa.georgean@gmail.com','liliane.kami@gmail.com','lolopuga@icloud.com','lucieners175@gmail.com','marcela@marcelamenezes.com','marcella@massotipaes.com.br','marciaceci26@gmail.com','nubiavfrodrigues@hotmail.com','priscila_reis@b2ytransportes.com.br','samarachaar2@gmail.com','sc@suellencampanhola.com','tkoproski@bloominternationaldoulas.com','vacris.santos2105@gmail.com')){ $APICE_EXCLUDE[$e]=1 } }
+  $aCsv=Join-Path $dataDir 'apice.csv'; Get-Sheet $APICE_ID '0' $aCsv
+  foreach($r in @(Read-Csv $aCsv)){ if($r.Count -lt 2){continue}; $em=(Norm $r[1]).ToLower(); if($em -notmatch '@'){continue}; if($APICE_EXCLUDE.ContainsKey($em)){continue}; $apList+=[pscustomobject]@{email=$em;key=(NameKey $r[0])} }
+  Write-Host ("APICE: {0} participantes | {1} amarelas fora ({2})" -f $apList.Count,$APICE_EXCLUDE.Count,$(if($apYellowAuto){'cor lida do XLSX'}else{'LISTA FIXA - XLSX falhou'}))
+}
+
+# ===================================================================
 #  PERFIL POR PESSOA (data-perfil.js) -> abas Objecoes, Compradoras e Tempo de compra
 #  1 linha por lead QUALIFICADA (data do lead) e 1 por COMPRA (data da compra), com a resposta de
 #  CADA pergunta do Typeform como indice de opcao. O front agrega pelo PERIODO do seletor (antes era
@@ -632,25 +665,51 @@ foreach($r in $ld){ $d=Norm $r[$L_DATE]; if($d -notmatch '^\d{4}-\d{2}-\d{2}$'){
   $e=(Norm $r[$L_EMAIL]).ToLower()
   if($e -ne ''){ if(-not $pByEmail.ContainsKey($e)){ $pByEmail[$e]=New-Object System.Collections.Generic.List[object] }; $pByEmail[$e].Add($r) }
   if(IsQual $r[$L_FAT] $r[$L_VOCE]){ $pLeadRows.Add($r) } }
-# compras (kiwify paga + extras do controle manual; cancelada fora) casadas com o typeform por e-mail.
-# Perfil = ultima resposta ATE a data da compra (senao a mais antiga); 1o contato = resposta mais antiga.
-# Pergunta em branco na linha escolhida (ex.: as novas so existem desde 23/08) -> pega de outra linha da mesma pessoa.
-$pBuy=New-Object System.Collections.Generic.List[object]
-function PBuyer($e,$d,$rev){ if($e -eq '' -or -not $script:pByEmail.ContainsKey($e)){ return }
-  $rs=$script:pByEmail[$e]; $first=$null; $pick=$null; $fd=''; $pd=''
+# perfil de UMA pessoa (todas as linhas dela no typeform): ultima resposta ate $cut ('' = sem corte, senao a
+# mais antiga); 1o contato = resposta mais antiga. Pergunta em branco na linha escolhida (ex.: as novas so
+# existem desde 23/08) -> pega de outra linha da mesma pessoa.
+function PPick($rs,$cut){ $first=$null; $pick=$null; $fd=''; $pd=''
   foreach($x in $rs){ $xd=Norm $x[$script:L_DATE]
     if($null -eq $first -or $xd -lt $fd){ $first=$x; $fd=$xd }
-    if($xd -le $d -and ($null -eq $pick -or $xd -ge $pd)){ $pick=$x; $pd=$xd } }
+    if(($cut -eq '' -or $xd -le $cut) -and ($null -eq $pick -or $xd -ge $pd)){ $pick=$x; $pd=$xd } }
   if($null -eq $pick){ $pick=$first }
   $a=PAnswers $pick
   for($i=0;$i -lt $a.Count;$i++){ if($a[$i] -ge 0){continue}; $c=$script:PCOL[$script:PQ[$i]]; if($c -lt 0){continue}
     foreach($x in $rs){ if($c -ge $x.Count){continue}; $v=PAns $script:PQ[$i] $x[$c]; if($v -ge 0){ $a[$i]=$v } } }
   $des=Norm $pick[$script:L_DESAFIO]; if($des -eq ''){ foreach($x in $rs){ $t=Norm $x[$script:L_DESAFIO]; if($t -ne ''){ $des=$t } } }
-  $script:pBuy.Add([pscustomobject]@{d=$d;first=$fd;b=(Bucket $des);rev=$rev;a=$a;des=$des}) }
+  return [pscustomobject]@{a=$a;des=$des;first=$fd;pick=$pick} }
+# participantes do Apice: e-mail OU nome igual ao da compradora (mesma regra da Ascensao)
+$apE=@{}; $apN=@{}; foreach($w in $apList){ $apE[$w.email]=1; if($w.key -match ' '){ $apN[$w.key]=1 } }
+# compras (kiwify paga + extras do controle manual; cancelada fora) casadas com o typeform por e-mail.
+# pid = id anonimo da pessoa (conta "quantas viraram Apice" por PESSOA, mesmo com 2 compras).
+$pBuy=New-Object System.Collections.Generic.List[object]; $pPid=@{}
+function PBuyer($e,$d,$rev,$nk){ if($e -eq '' -or -not $script:pByEmail.ContainsKey($e)){ return }
+  $p=PPick $script:pByEmail[$e] $d
+  $ap=0; if($script:apE.ContainsKey($e) -or ($nk -match ' ' -and $script:apN.ContainsKey($nk))){ $ap=1 }
+  if(-not $script:pPid.ContainsKey($e)){ $script:pPid[$e]=$script:pPid.Count }
+  $script:pBuy.Add([pscustomobject]@{d=$d;first=$p.first;b=(Bucket $p.des);rev=$rev;ap=$ap;pid=$script:pPid[$e];a=$p.a;des=$p.des}) }
 foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $e=(Norm $r[$K_EMAIL]).ToLower(); if($vendaExclE.ContainsKey($e)){continue}; $nk=NameKey $r[$K_NOME]; if($nk -match ' ' -and $vendaExclN.ContainsKey($nk)){continue}
-  PBuyer $e $d (MoneyKiwify $r[$K_REV]) }
-foreach($x in $extras){ PBuyer $x.email $x.date $x.valor }
+  PBuyer $e $d (MoneyKiwify $r[$K_REV]) $nk }
+foreach($x in $extras){ PBuyer $x.email $x.date $x.valor '' }
+
+# perfil das participantes do APICE (sem data: e uma lista). Casa com o typeform por e-mail; senao por NOME
+# unico na base (mesma regra da aba Apice). ck = tambem comprou o Cocktail (kiwify paga, cancelada fora).
+$ldName=@{}; foreach($r in $ld){ $full=NameKey (($r[0])+' '+($r[1])); if($full -match ' '){ if(-not $ldName.ContainsKey($full)){ $ldName[$full]=New-Object System.Collections.Generic.List[object] }; $ldName[$full].Add($r) } }
+$kE=@{}; $kN=@{}
+foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $e=(Norm $r[$K_EMAIL]).ToLower(); if($vendaExclE.ContainsKey($e)){continue}
+  $nk=NameKey $r[$K_NOME]; if($nk -match ' ' -and $vendaExclN.ContainsKey($nk)){continue}; if($e -ne ''){ $kE[$e]=1 }; if($nk -match ' '){ $kN[$nk]=1 } }
+$pApRows=New-Object System.Collections.Generic.List[object]; $apMatchE=0; $apMatchN=0
+foreach($w in $apList){ $rs=$null
+  if($pByEmail.ContainsKey($w.email)){ $rs=$pByEmail[$w.email]; $apMatchE++ }
+  elseif($w.key -match ' ' -and $ldName.ContainsKey($w.key) -and $ldName[$w.key].Count -eq 1){ $one=$ldName[$w.key][0]; $oe=(Norm $one[$L_EMAIL]).ToLower()
+    if($oe -ne '' -and $pByEmail.ContainsKey($oe)){ $rs=$pByEmail[$oe] } elseif((Norm $one[$L_DATE]) -match '^\d{4}-\d{2}-\d{2}$'){ $rs=New-Object System.Collections.Generic.List[object]; $rs.Add($one) }
+    if($null -ne $rs){ $apMatchN++ } }
+  if($null -eq $rs){ continue }
+  $p=PPick $rs ''
+  $isq=0; if(IsQual $p.pick[$L_FAT] $p.pick[$L_VOCE]){ $isq=1 }
+  $ck=0; if($kE.ContainsKey($w.email) -or ($w.key -match ' ' -and $kN.ContainsKey($w.key))){ $ck=1 }
+  $pApRows.Add([pscustomobject]@{b=(Bucket $p.des);q=$isq;ck=$ck;a=$p.a;des=$p.des}) }
 
 # dia 0 = data mais antiga usada; datas viram inteiros (arquivo menor)
 $P_D0s='9999-12-31'
@@ -661,19 +720,23 @@ $pL=New-Object System.Collections.Generic.List[string]
 foreach($r in $pLeadRows){
   $a=PAnswers $r; $t=PTxt (Norm $r[$L_DESAFIO]) 3 1
   $pL.Add('[' + (PDay (Norm $r[$L_DATE])) + ',' + $PBIDX[(Bucket $r[$L_DESAFIO])] + ',' + ($a -join ',') + ',' + $t + ']') }
-$pB=New-Object System.Collections.Generic.List[string]
-foreach($b in $pBuy){ $t=PTxt $b.des 22 4
-  $pB.Add('[' + (PDay $b.d) + ',' + (PDay $b.first) + ',' + $PBIDX[$b.b] + ',' + [math]::Round($b.rev,0) + ',' + ($b.a -join ',') + ',' + $t + ']') }
+$pB=New-Object System.Collections.Generic.List[string]   # [dia compra, dia 1o contato, objecao, valor, virou Apice 0/1, pid, resp..., texto]
+foreach($b in $pBuy){ $t=PTxt $b.des 3 1
+  $pB.Add('[' + (PDay $b.d) + ',' + (PDay $b.first) + ',' + $PBIDX[$b.b] + ',' + [math]::Round($b.rev,0) + ',' + $b.ap + ',' + $b.pid + ',' + ($b.a -join ',') + ',' + $t + ']') }
+$pA=New-Object System.Collections.Generic.List[string]   # [objecao, qualificada 0/1, comprou Cocktail 0/1, resp..., texto]
+foreach($x in $pApRows){ $t=PTxt $x.des 3 1
+  $pA.Add('[' + $PBIDX[$x.b] + ',' + $x.q + ',' + $x.ck + ',' + ($x.a -join ',') + ',' + $t + ']') }
 $qDefs=@(); foreach($qk in $PQ){   # ⚠️ nome != $PQ (variavel do PS e case-insensitive: $pQ seria a MESMA)
   if($qk -eq 'busca'){ $o=@($BUSCA_B | ForEach-Object { $_[0] }) + 'outro' } else { $o=@($PQRAW[$qk].ToArray()) }
   $qDefs += [pscustomobject]@{k=$qk;multi=($qk -eq 'busca');col=($PCOL[$qk] -ge 0);o=[object[]]$o} }
 $perfilJson='{"generatedAt":"'+$nowIso+'","generatedAtBR":"'+$nowBR+'","d0":"'+$P_D0s+'"' +
   ',"buckets":' + (ConvertTo-Json -InputObject ([object[]]$OBJ_ORDER) -Compress) +
   ',"q":' + (ConvertTo-Json -InputObject ([object[]]$qDefs) -Depth 4 -Compress) +
-  ',"L":[' + ($pL -join ',') + '],"B":[' + ($pB -join ',') + ']' +
+  ',"L":[' + ($pL -join ',') + '],"B":[' + ($pB -join ',') + '],"A":[' + ($pA -join ',') + ']' +
+  ',"apice":{"total":' + $apList.Count + ',"matchedEmail":' + $apMatchE + ',"matchedName":' + $apMatchN + ',"yellowAuto":' + $(if($apYellowAuto){'true'}else{'false'}) + '}' +
   ',"T":' + (ConvertTo-Json -InputObject ([object[]]$PTXT.ToArray()) -Compress) + '}'
 [IO.File]::WriteAllText((Join-Path $root 'data-perfil.js'), ("window.DASH_PERFIL="+$perfilJson+";"), [System.Text.UTF8Encoding]::new($false))
-Write-Host ("PERFIL: {0} qualificadas | {1} compras casadas c/ typeform | {2} textos | d0={3} | cols novas: civil={4} filhos={5} margem={6} fe={7} busca={8} pres={9} | {10}s" -f $pLeadRows.Count,$pBuy.Count,$PTXT.Count,$P_D0s,$L_CIVIL,$L_FILHOS,$L_MARGEM,$L_FE,$L_BUSCA,$L_PRES,[int]$pSw.Elapsed.TotalSeconds)
+Write-Host ("PERFIL: {0} qualificadas | {1} compras casadas c/ typeform ({2} de Apice) | Apice {3}/{4} c/ perfil (email={5} nome={6}) | {7} textos | d0={8} | cols novas: civil={9} filhos={10} margem={11} fe={12} busca={13} pres={14} | {15}s" -f $pLeadRows.Count,$pBuy.Count,@($pBuy | Where-Object { $_.ap -eq 1 }).Count,$pApRows.Count,$apList.Count,$apMatchE,$apMatchN,$PTXT.Count,$P_D0s,$L_CIVIL,$L_FILHOS,$L_MARGEM,$L_FE,$L_BUSCA,$L_PRES,[int]$pSw.Elapsed.TotalSeconds)
 }
 
 # ===================================================================
@@ -681,15 +744,7 @@ Write-Host ("PERFIL: {0} qualificadas | {1} compras casadas c/ typeform | {2} te
 #  (e-mail+nome só p/ casar; publica só agregados/anonimizado)
 # ===================================================================
 if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
-  function NameKey($s){ return ((Deaccent (Norm $s)) -replace '\s+',' ').Trim() }
-  # Planilha REAL de participantes do Apice (nova, ago/2026). Colunas [0]=nome [1]=email, sem cabecalho. Ticket R$150k.
-  $APICE_ID='19Ee8ZK6yXk3D1DUssv3ASjS76rIAOqhDOLic2yfYQ1Q'
-  # ⚠️ Linhas AMARELAS (fill FFF2CC) na planilha = DESCONSIDERAR (pedido do cliente). gviz/CSV NAO traz
-  # cor, entao a lista de e-mails amarelos fica FIXA aqui (detectada 1x via export XLSX). Se o cliente
-  # pintar/despintar linhas, ATUALIZAR esta lista. 29 amarelas de 113 -> 84 participantes.
-  $APICE_EXCLUDE=@{}; foreach($e in @('alinedraghifr@hotmail.com','andressahuve@gmail.com','brenda.fagundes@outlook.com','brunagrupobm@gmail.com','clickgo.viagens@gmail.com','clubedadisney@gmail.com','consultoriadenegociospt@gmail.com','contato.larissasteimbach@gmail.com','cristianekassim@gmail.com','daniela_vieiraloura@hotmail.com','denise0407@me.com','emanuella.pereirasantos@hotmail.com','fefreitas02@gmail.com','fernaroque@hotmail.com','francisdias@acerterh.com.br','kerastinni@gmail.com','larissa.georgean@gmail.com','liliane.kami@gmail.com','lolopuga@icloud.com','lucieners175@gmail.com','marcela@marcelamenezes.com','marcella@massotipaes.com.br','marciaceci26@gmail.com','nubiavfrodrigues@hotmail.com','priscila_reis@b2ytransportes.com.br','samarachaar2@gmail.com','sc@suellencampanhola.com','tkoproski@bloominternationaldoulas.com','vacris.santos2105@gmail.com')){ $APICE_EXCLUDE[$e]=1 }
-  $aCsv=Join-Path $dataDir 'apice.csv'; Get-Sheet $APICE_ID '0' $aCsv
-  $apList=@(); foreach($r in (Read-Csv $aCsv)){ if($r.Count -lt 2){continue}; $em=(Norm $r[1]).ToLower(); if($em -notmatch '@'){continue}; if($APICE_EXCLUDE.ContainsKey($em)){continue}; $apList+=[pscustomobject]@{email=$em;key=(NameKey $r[0])} }
+  # $apList (participantes, amarelas fora) ja foi carregada acima — secao "LISTA DO APICE"
   $apEmail=@{}; $apName=@{}
   foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); $full=NameKey (($r[0])+' '+($r[1]))
     if($e -ne '' -and -not $apEmail.ContainsKey($e)){ $apEmail[$e]=$r }

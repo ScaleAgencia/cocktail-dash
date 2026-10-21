@@ -389,3 +389,17 @@ ul.quotes li{font-size:13px;color:#33414f;font-style:italic;line-height:1.4}
   .pf-table tr.rx-row td{display:block;padding:12px 10px}
   .trait{white-space:normal}
 }
+/* Objeções: seletor de público (qualificadas | compradoras) + selo "virou Ápice" */
+.aud-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.aud-top .chart-title{margin:0}
+.seg{display:inline-flex;background:#eef2f6;border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px}
+.seg button{border:0;background:transparent;border-radius:9px;padding:9px 16px;font-size:13.5px;font-weight:700;color:#41505e;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:background .15s,color .15s,box-shadow .15s}
+.seg button:hover{color:var(--ink);background:#e3e9f0}
+.seg button.active{background:var(--blue2);color:#fff;box-shadow:0 1px 3px rgba(20,40,70,.18)}
+.seg-n{font-size:11.5px;font-weight:800;background:rgba(15,91,168,.1);color:var(--navy);border-radius:999px;padding:1px 8px}
+.seg button.active .seg-n{background:rgba(255,255,255,.22);color:#fff}
+.aud-head .micro-note{margin-top:10px}
+.sec-card{margin-top:16px;padding:13px 16px}
+.sec-card .micro-note{margin-top:3px}
+.ap-badge{display:inline-block;font-weight:800;color:#8a5a00;background:#fff4d6;border:1px solid #f1d58a;border-radius:999px;padding:2px 9px;font-size:12px}
+@media(max-width:700px){ .seg{width:100%} .seg button{flex:1;justify-content:center;padding:9px 8px;font-size:12.5px} }

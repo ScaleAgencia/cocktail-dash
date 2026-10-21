@@ -4,7 +4,6 @@ const D = window.DASH_DATA;
 const OBJ = window.DASH_OBJ || {};
 const INS = window.DASH_INSIGHTS || {};
 const PF = window.DASH_PERFIL || {};   // por pessoa (leads qualificadas + compras) -> Objeções/Compradoras/Tempo filtráveis por data
-const APICE = window.DASH_APICE || {};
 const ASC = window.DASH_ASC || {};
 const DATAS = window.DASH_DATAS || {};
 const TARGET_CPL_QLF = 150;   // meta CPL qualificado (R$)
@@ -356,7 +355,9 @@ const PQS = arr(PF.q).map(q=>{
   arr(q.o).forEach((raw,i)=>{ const L=(def.map&&def.map[nkey(raw)])||cap1(raw); let li=labels.indexOf(L); if(li<0){ labels.push(L); li=labels.length-1; } map[i]=li; });
   return {k:q.k, def, multi:!!q.multi, labels, map};
 });
-const PNQ=PQS.length, PL_OFF=2, PB_OFF=4, PL_T=2+PNQ, PB_T=4+PNQ;   // L=[dia,objeção,resp...,texto]  B=[dia compra,dia 1º contato,objeção,valor,resp...,texto]
+// L=[dia, objeção, resp…, texto]   B=[dia compra, dia 1º contato, objeção, valor, virou Ápice 0/1, pessoa, resp…, texto]
+// A=[objeção, qualificada 0/1, comprou Cocktail 0/1, resp…, texto]  (Ápice é uma lista, sem data)
+const PNQ=PQS.length, PL_OFF=2, PB_OFF=6, PA_OFF=3, PL_T=PL_OFF+PNQ, PB_T=PB_OFF+PNQ, PA_T=PA_OFF+PNQ;
 const PBK = arr(PF.buckets);
 const PF_D0 = PF.d0 ? parseD(PF.d0) : null;
 const pfIdx = s => Math.round((parseD(s)-PF_D0)/86400000);
@@ -419,80 +420,102 @@ function raioX(rows,off,base,baseLbl){
   return `<div class="rx-legend"><span class="rx-key"><i class="rx-k-fill"></i>quem tem essa objeção</span><span class="rx-key"><i class="rx-k-avg"></i>média ${baseLbl}</span></div><div class="rx-grid">${cards||'<div class="sub">Sem respostas suficientes.</div>'}</div>`;
 }
 function bucketCount(rows,col){ const c=new Array(PBK.length).fill(0); for(const r of rows){ if(r[col]>=0) c[r[col]]++; } return c; }
-const pfOpen = { obj:new Set(), buy:new Set() };   // linhas abertas (raio-x) em cada tabela
+// linhas abertas (raio-x) por tabela+público; o clique acha o conjunto e o render certos na hora (a mesma
+// tabela de Objeções troca de público)
+const pfOpen = { qlf:new Set(), buy:new Set(), pbuy:new Set(), apice:new Set() };
 function bindToggle(tbodySel,set,rerender){
-  const tb=document.querySelector(tbodySel); if(!tb || tb.dataset.bound) return; tb.dataset.bound='1';
-  tb.addEventListener('click',e=>{ const tr=e.target.closest('tr.pf-row'); if(!tr) return; const k=tr.dataset.k; set.has(k)?set.delete(k):set.add(k); rerender(); });
+  const tb=document.querySelector(tbodySel); if(!tb) return; tb._pfSet=set; tb._pfRender=rerender;
+  if(tb.dataset.bound) return; tb.dataset.bound='1';
+  tb.addEventListener('click',e=>{ const tr=e.target.closest('tr.pf-row'); if(!tr) return; const k=tr.dataset.k, s=tb._pfSet; s.has(k)?s.delete(k):s.add(k); tb._pfRender(); });
 }
-
-// ===================== objections page =====================
-const sumv = o => Object.values(o).reduce((s,v)=>s+v,0);
-function objBars(map,total){
-  const ents=Object.entries(map).filter(([k,v])=>v>0).sort((a,b)=>b[1]-a[1]);
-  if(!ents.length||total<=0) return '<div class="sub">Sem dados no período selecionado.</div>';
-  const maxp=ents[0][1]/total*100;
-  return ents.map(([k,v])=>{
-    const p=v/total*100;
-    return `<div class="objrow"><div class="objlabel" title="${objLabel(k)}">${objLabel(k)}</div>
-      <div class="objbar"><div class="objfill" style="width:${(p/maxp*100).toFixed(1)}%;background:${objColor(k)}"></div></div>
-      <div class="objval">${pct(p)} <span class="sub">(${int(v)})</span></div></div>`;
+// públicos: de onde vêm as respostas e a coluna da objeção/texto em cada linha
+const AUD = {
+  qlf:  {off:PL_OFF, tcol:PL_T, bcol:1, who:'qualificadas', base:'das qualificadas do período'},
+  buy:  {off:PB_OFF, tcol:PB_T, bcol:2, who:'compradoras', base:'das compradoras do período', apice:true},
+  apice:{off:PA_OFF, tcol:PA_T, bcol:0, who:'participantes do Ápice', base:'das participantes do Ápice'}
+};
+const apSize = rows => { const ppl=new Set(), ap=new Set(); for(const r of rows){ ppl.add(r[5]); if(r[4]===1) ap.add(r[5]); } return {ppl:ppl.size, ap:ap.size}; };
+// tabela: % de cada objeção + (compradoras: quantas viraram Ápice) + o que elas têm em comum; raio-x ao clicar
+function audObjTable(tableSel,cfg,rows,openSet,rerender){
+  const thead=document.querySelector(tableSel+' thead'), tbody=document.querySelector(tableSel+' tbody'), n=rows.length;
+  if(!n){ thead.innerHTML=''; tbody.innerHTML=`<tr><td class="sub" style="text-align:left">Nenhuma ${cfg.who.replace(/s( |$)/,'$1')} no período selecionado.</td></tr>`; bindToggle(tableSel+' tbody',openSet,rerender); return; }
+  const base=pfDist(rows,cfg.off), cnt=bucketCount(rows,cfg.bcol), ncol=cfg.apice?4:3;
+  thead.innerHTML=`<tr><th class="pf-name">Objeção (principal desafio)</th><th>% das ${cfg.who}</th>${cfg.apice?'<th>Viraram Ápice 👑</th>':''}<th class="pf-traits">O que elas têm em comum</th></tr>`;
+  const list=PBK.map((k,i)=>({k,i,c:cnt[i],p:cnt[i]/n*100})).filter(r=>r.c>0).sort((a,b)=>b.c-a.c);
+  tbody.innerHTML=list.map(r=>{
+    const grp=rows.filter(x=>x[cfg.bcol]===r.i), open=openSet.has(String(r.i));
+    let apCell='';
+    if(cfg.apice){ const s=apSize(grp);
+      apCell=`<td data-l="Viraram Ápice">${s.ap?`<span class="ap-badge">👑 ${int(s.ap)}</span> <span class="sub">${pct(s.ap/s.ppl*100)} delas</span>`:'<span class="sub">0</span>'}</td>`; }
+    const tr=`<tr class="pf-row${open?' open':''}" data-k="${r.i}"><td class="pf-name"><span class="pf-caret">▸</span><span class="objdot" style="background:${objColor(r.k)}"></span>${objLabel(r.k)}</td>
+      <td data-l="% das ${cfg.who}">${shareCell(r.p,r.c,objColor(r.k))}</td>${apCell}
+      <td class="pf-traits" data-l="O que elas têm em comum">${traitsCell(pfTraits(grp,cfg.off,base,4),'delas')}</td></tr>`;
+    return open ? tr+`<tr class="rx-row"><td colspan="${ncol}">${raioX(grp,cfg.off,base,cfg.base)}</td></tr>` : tr;
+  }).join('');
+  bindToggle(tableSel+' tbody',openSet,rerender);
+}
+// estudo do perfil: todas as perguntas do Typeform (as novas existem desde 23/08 -> mostra quantas responderam)
+function audGrid(el,cfg,rows,d){
+  const n=rows.length; if(!el) return;
+  if(!n){ el.innerHTML=''; return; }
+  d=d||pfDist(rows,cfg.off);
+  el.innerHTML=PQS.map((q,i)=>{ const o=d[i], list=pfList(i,d);
+    const cov=(q.def.isNew||o.n<n) ? `<div class="q-cov">${int(o.n)} de ${int(n)} ${cfg.who} responderam${q.def.isNew?' (pergunta nova no Typeform)':''}${q.multi?' · uma resposta pode citar mais de um tema':''}</div>` : '';
+    return `<div class="card"><div class="chart-title">${q.def.icon} ${esc(q.def.label)}${q.def.isNew?'<span class="q-new">novo</span>':''}</div>${cov}<div class="objlist">${list.length?bars(list,q.def.color):'<div class="sub">Sem respostas.</div>'}</div></div>`;
   }).join('');
 }
-function renderObjections(){
-  const L=pfRows(PF.L,state.start,state.end), B=pfRows(PF.B,state.start,state.end);
-  const qN=L.length, bN=B.length, vendas=sumDaily(state.start,state.end).sales;
-  const cL=bucketCount(L,1), cB=bucketCount(B,2);
-  const asMap=c=>Object.fromEntries(PBK.map((k,i)=>[k,c[i]]));
-  document.getElementById('objQlf').innerHTML=objBars(asMap(cL),qN);
-  document.getElementById('objBuy').innerHTML=objBars(asMap(cB),bN);
-  document.getElementById('objQlfN').textContent=`(${int(qN)} no período)`;
-  document.getElementById('objBuyN').textContent=`(${int(bN)} no período)`;
-  document.getElementById('objNote').textContent=
-    `Categorizado por palavra-chave a partir da resposta livre "principal desafio". Compradoras: ${int(bN)} de ${int(vendas)} vendas do período casadas com o Typeform por e-mail (só as casadas entram aqui). Período: ${state.start.split('-').reverse().join('/')} → ${state.end.split('-').reverse().join('/')} · Dados de ${PF.generatedAtBR||'—'} (atualiza a cada 3h, junto com o tráfego).`;
-  // % de cada objeção + o que elas têm em comum (qualificadas do período) + raio-x ao clicar
-  const baseL=pfDist(L,PL_OFF);
-  const rows=PBK.map((k,i)=>{ const q=cL[i], b=cB[i], qp=qN?q/qN*100:0, bp=bN?b/bN*100:0;
-    return {k,i,q,b,qp,bp,idx:(qp>0?bp/qp:(bp>0?Infinity:0))}; }).filter(r=>r.q>0||r.b>0).sort((x,y)=>y.qp-x.qp||y.bp-x.bp);
-  document.querySelector('#objTable thead').innerHTML=
-    '<tr><th class="pf-name">Objeção</th><th>% das qualificadas</th><th>% das compradoras</th><th>Índice de compra</th><th class="pf-traits">O que elas têm em comum</th></tr>';
-  document.querySelector('#objTable tbody').innerHTML=rows.map(r=>{
-    let idxCell='—';
-    if(isFinite(r.idx)&&r.idx>0){ const col=r.idx>=1.2?'var(--green)':(r.idx<=0.8?'var(--red)':'var(--muted)'); idxCell=`<b style="color:${col}">${r.idx.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}x</b>`; }
-    else if(r.idx===Infinity){ idxCell='<b style="color:var(--green)">novo</b>'; }
-    const grp=L.filter(x=>x[1]===r.i), open=pfOpen.obj.has(String(r.i));
-    const tr=`<tr class="pf-row${open?' open':''}" data-k="${r.i}"><td class="pf-name"><span class="pf-caret">▸</span><span class="objdot" style="background:${objColor(r.k)}"></span>${objLabel(r.k)}</td>
-      <td data-l="% das qualificadas">${shareCell(r.qp,r.q,objColor(r.k))}</td>
-      <td data-l="% das compradoras">${shareCell(r.bp,r.b,objColor(r.k))}</td>
-      <td data-l="Índice de compra">${idxCell}</td>
-      <td class="pf-traits" data-l="O que elas têm em comum">${traitsCell(pfTraits(grp,PL_OFF,baseL,4),'delas')}</td></tr>`;
-    return open ? tr+`<tr class="rx-row"><td colspan="5">${grp.length?raioX(grp,PL_OFF,baseL,'das qualificadas do período'):'<div class="sub">Nenhuma qualificada com essa objeção no período.</div>'}</td></tr>` : tr;
-  }).join('') || '<tr><td colspan="5" class="sub" style="text-align:left">Sem leads qualificadas no período selecionado.</td></tr>';
-  bindToggle('#objTable tbody',pfOpen.obj,renderObjections);
-  renderObjVoices(L);
-}
-
-// "micro" das objeções: o que as qualificadas DO PERÍODO escreveram (repetições + exemplos)
-function renderObjVoices(L){
-  const box=document.getElementById('objVoices');
-  if(!box) return;
+// "micro" das objeções: o que o público escreveu (repetições + exemplos), por objeção
+function audVoices(el,cfg,rows){
+  if(!el) return;
   const T=arr(PF.T), byB=PBK.map(()=>new Map());
-  for(const r of L){ const t=r[PL_T]; if(t==null||t<0) continue; const m=byB[r[1]]; m.set(t,(m.get(t)||0)+1); }
+  for(const r of rows){ const t=r[cfg.tcol]; if(t==null||t<0) continue; const m=byB[r[cfg.bcol]]; m.set(t,(m.get(t)||0)+1); }
   const blocks=[];
   PBK.forEach((k,i)=>{ const m=byB[i]; if(!m.size) return; let total=0; m.forEach(v=>{ total+=v; });
     const terms=[...m.entries()].filter(e=>e[1]>=2).sort((a,b)=>b[1]-a[1]).slice(0,14);
     const ex=[...m.keys()].map(t=>T[t]).filter(s=>s && s.length>=25).sort((a,b)=>b.length-a.length).slice(0,8);
     blocks.push({k,total,distinct:m.size,terms,ex}); });
   blocks.sort((a,b)=>b.total-a.total);
-  if(!blocks.length){ box.innerHTML='<div class="sub">Sem relatos de qualificadas no período selecionado.</div>'; return; }
-  box.innerHTML=blocks.map((o,i)=>{
+  if(!blocks.length){ el.innerHTML=`<div class="sub">Sem relatos de ${cfg.who} no período selecionado.</div>`; return; }
+  el.innerHTML=blocks.map((o,i)=>{
     const terms=o.terms.map(([t,n])=>`<span class="termchip">${esc(T[t])} <b>×${n}</b></span>`).join('');
     const ex=o.ex.map(q=>`<li>“${esc(q)}”</li>`).join('');
     return `<details class="voice"${i===0?' open':''}>
-      <summary><span class="objdot" style="background:${objColor(o.k)}"></span>${objLabel(o.k)} <span class="sub">${int(o.total)} qualificadas · ${int(o.distinct)} relatos distintos</span></summary>
+      <summary><span class="objdot" style="background:${objColor(o.k)}"></span>${objLabel(o.k)} <span class="sub">${int(o.total)} ${cfg.who} · ${int(o.distinct)} relatos distintos</span></summary>
       ${terms?`<div class="vblock"><div class="vlbl">Mais citados</div><div class="chips">${terms}</div></div>`:''}
       ${ex?`<div class="vblock"><div class="vlbl">Exemplos (na voz delas)</div><ul class="quotes">${ex}</ul></div>`:''}
     </details>`;
   }).join('');
+}
+// depoimentos (frases completas, sem repetir); sortCol = coluna de data p/ mais recentes primeiro
+const quoteOk = s => s && s.length>=22 && new Set(s.toLowerCase().replace(/\s/g,'')).size>4;
+function audQuotes(el,rows,tcol,sortCol,max){
+  if(!el) return;
+  const T=arr(PF.T), seen=new Set(), qs=[];
+  const list=sortCol==null?rows:rows.slice().sort((a,b)=>b[sortCol]-a[sortCol]);
+  for(const r of list){ const t=r[tcol]; if(t==null||t<0||seen.has(t)||!quoteOk(T[t])) continue; seen.add(t); qs.push(T[t]); if(qs.length>=(max||12)) break; }
+  el.innerHTML = qs.length ? `<ul class="quotes">${qs.map(q=>`<li>“${esc(q)}”</li>`).join('')}</ul>` : '<div class="sub">Sem depoimentos.</div>';
+}
+
+// ===================== objections page (escolhe o público: qualificadas OU compradoras) =====================
+function renderObjections(){
+  const aud=(state.objAud==='buy')?'buy':'qlf', cfg=AUD[aud];
+  const L=pfRows(PF.L,state.start,state.end), B=pfRows(PF.B,state.start,state.end), rows=aud==='buy'?B:L;
+  const vendas=sumDaily(state.start,state.end).sales, per=`${state.start.split('-').reverse().join('/')} → ${state.end.split('-').reverse().join('/')}`;
+  document.getElementById('audQlfN').textContent=int(L.length);
+  document.getElementById('audBuyN').textContent=int(B.length);
+  document.querySelectorAll('#objAud button').forEach(b=>{ const on=b.dataset.aud===aud; b.classList.toggle('active',on); b.setAttribute('aria-selected',on?'true':'false'); });
+  document.getElementById('objNote').innerHTML = aud==='buy'
+    ? `Mostrando <b>só as compradoras</b> do período (${per}): <b>${int(B.length)}</b> compras casadas por e-mail com o Typeform, de ${int(vendas)} vendas. Objeção = categoria por palavra-chave da resposta livre "principal desafio". Dados de ${PF.generatedAtBR||'—'} (atualiza a cada 3h).`
+    : `Mostrando <b>só as leads qualificadas</b> que entraram no período (${per}): <b>${int(L.length)}</b> qualificadas (fatura a partir de R$ 100 mil e não é CLT). Objeção = categoria por palavra-chave da resposta livre "principal desafio". Dados de ${PF.generatedAtBR||'—'} (atualiza a cada 3h).`;
+  document.getElementById('objTblTitle').textContent=`🧬 Objeções das ${cfg.who}: quanto pesa cada uma e o que elas têm em comum`;
+  document.getElementById('objHelp').innerHTML=`<b>O que elas têm em comum</b> = as respostas do Typeform que mais aparecem entre as ${cfg.who} com aquela objeção. <span class="trait up" style="font-size:11px;padding:1px 7px"><i>↑ 1,4x</i></span> = acima da média das ${cfg.who} do período.${cfg.apice?' <b>Viraram Ápice</b> = quantas dessas compradoras estão na planilha de participantes do Ápice.':''} <b>Clique numa linha</b> para abrir o raio-x com todas as perguntas.`;
+  audObjTable('#objTable',cfg,rows,pfOpen[aud],renderObjections);
+  document.getElementById('objGridTitle').textContent=`📋 Estudo do perfil das ${cfg.who} do período`;
+  document.getElementById('objGridNote').textContent=`Todas as perguntas do Typeform, só das ${cfg.who} (${int(rows.length)}). As marcadas como novo só existem desde 23/08.`;
+  audGrid(document.getElementById('objGrid'),cfg,rows);
+  document.getElementById('objVoiceTitle').textContent=`O que as ${cfg.who} relatam — na voz delas`;
+  document.getElementById('objVoiceNote').textContent=`Respostas reais do campo "principal desafio" das ${cfg.who} do período (anonimizado — sem nome/e-mail/telefone). Clique numa objeção para expandir.`;
+  audVoices(document.getElementById('objVoices'),cfg,rows);
 }
 
 // ===================== insights page =====================
@@ -926,57 +949,41 @@ function renderPerfil(){
     tb.innerHTML='<tr><td class="sub" style="text-align:left">Nenhuma compra casada com o Typeform no período selecionado.</td></tr>';
     grid.innerHTML=''; document.getElementById('pQuotes').innerHTML=''; return;
   }
-  const d=pfDist(B,PB_OFF), T=tempoStats(B);
-  // faturamento médio estimado (meio de cada faixa) + ticket
-  const fi=PQS.findIndex(q=>q.k==='fat'); let fs=0, fn=0;
-  if(fi>=0){ PQS[fi].labels.forEach((L,li)=>{ const m=PQ_DEF.fat.mid[L]; if(m){ fs+=m*d[fi].c[li]; fn+=d[fi].c[li]; } }); }
-  const ticket=B.reduce((s,r)=>s+(r[3]||0),0)/n;
+  const d=pfDist(B,PB_OFF), T=tempoStats(B), ticket=B.reduce((s,r)=>s+(r[3]||0),0)/n, fat=fatEstimate(d), ap=apSize(B);
   document.getElementById('perfilStats').innerHTML =
     statCard(int(n),'Compradoras analisadas',`de ${int(vendas)} vendas no período`) +
     statCard(money(ticket),'Ticket médio da compra') +
-    statCard(fn?`R$ ${int(fs/fn)}`:'—','Faturamento médio /mês (estimado)','pelo meio de cada faixa') +
-    statCard(T.n?`${int(T.median)}<span class="statc-u"> dias</span>`:'—','Mediana até comprar','do 1º contato à compra');
-  // % de cada objeção entre as compradoras + o que elas têm em comum + raio-x ao clicar
-  const cB=bucketCount(B,2);
-  const rows=PBK.map((k,i)=>({k,i,b:cB[i],bp:cB[i]/n*100})).filter(r=>r.b>0).sort((x,y)=>y.b-x.b);
-  document.querySelector('#pObjTable thead').innerHTML='<tr><th class="pf-name">Principal desafio</th><th>% das compradoras</th><th class="pf-traits">O que elas têm em comum</th></tr>';
-  tb.innerHTML=rows.map(r=>{
-    const grp=B.filter(x=>x[2]===r.i), open=pfOpen.buy.has(String(r.i));
-    const tr=`<tr class="pf-row${open?' open':''}" data-k="${r.i}"><td class="pf-name"><span class="pf-caret">▸</span><span class="objdot" style="background:${objColor(r.k)}"></span>${objLabel(r.k)}</td>
-      <td data-l="% das compradoras">${shareCell(r.bp,r.b,objColor(r.k))}</td>
-      <td class="pf-traits" data-l="O que elas têm em comum">${traitsCell(pfTraits(grp,PB_OFF,d,4),'delas')}</td></tr>`;
-    return open ? tr+`<tr class="rx-row"><td colspan="3">${raioX(grp,PB_OFF,d,'das compradoras do período')}</td></tr>` : tr;
-  }).join('');
-  bindToggle('#pObjTable tbody',pfOpen.buy,renderPerfil);
-  // todas as perguntas do Typeform (as novas existem desde 23/08 -> mostra quantas responderam)
-  grid.innerHTML=PQS.map((q,i)=>{ const o=d[i]; const list=pfList(i,d);
-    const cov=(q.def.isNew||o.n<n) ? `<div class="q-cov">${int(o.n)} de ${int(n)} compradoras responderam${q.def.isNew?' (pergunta nova no Typeform)':''}${q.multi?' · uma resposta pode citar mais de um tema':''}</div>` : '';
-    return `<div class="card"><div class="chart-title">${q.def.icon} ${esc(q.def.label)}${q.def.isNew?'<span class="q-new">novo</span>':''}</div>${cov}<div class="objlist">${list.length?bars(list,q.def.color):'<div class="sub">Sem respostas no período.</div>'}</div></div>`;
-  }).join('');
-  // depoimentos das compradoras do período (mais recentes primeiro, sem repetir)
-  const Tx=arr(PF.T), seen=new Set(), qs=[];
-  for(const r of B.slice().sort((a,b)=>b[0]-a[0])){ const t=r[PB_T]; if(t==null||t<0||seen.has(t)) continue; seen.add(t); qs.push(Tx[t]); if(qs.length>=12) break; }
-  document.getElementById('pQuotes').innerHTML = qs.length ? `<ul class="quotes">${qs.map(q=>`<li>“${esc(q)}”</li>`).join('')}</ul>` : '<div class="sub">Sem depoimentos no período.</div>';
+    statCard(fat?`R$ ${int(fat)}`:'—','Faturamento médio /mês (estimado)','pelo meio de cada faixa') +
+    statCard(T.n?`${int(T.median)}<span class="statc-u"> dias</span>`:'—','Mediana até comprar','do 1º contato à compra') +
+    statCard(`👑 ${int(ap.ap)}`,'Viraram Ápice',`${pct(ap.ppl?ap.ap/ap.ppl*100:0)} das ${int(ap.ppl)} compradoras do período`);
+  // % de cada objeção entre as compradoras + quantas viraram Ápice + o que elas têm em comum (raio-x ao clicar)
+  audObjTable('#pObjTable',AUD.buy,B,pfOpen.pbuy,renderPerfil);
+  audGrid(grid,AUD.buy,B,d);
+  audQuotes(document.getElementById('pQuotes'),B,PB_T,0,12);   // mais recentes primeiro
 }
+// faturamento médio /mês estimado pelo meio de cada faixa
+function fatEstimate(d){ const fi=PQS.findIndex(q=>q.k==='fat'); let s=0, n=0;
+  if(fi>=0){ PQS[fi].labels.forEach((L,li)=>{ const m=PQ_DEF.fat.mid[L]; if(m){ s+=m*d[fi].c[li]; n+=d[fi].c[li]; } }); }
+  return n ? s/n : 0; }
+// Ápice: participantes (planilha, amarelas fora) casadas com o Typeform — mesma visão de perfil das compradoras, sem data
 function renderApice(){
-  const A=APICE; if(!A.fatDist){ return; }
-  const naoBase=(A.totalApice||0)-(A.matched||0);
+  const M=PF.apice||{}, A=arr(PF.A), n=A.length, total=M.total||0;
   document.getElementById('apiceIntro').innerHTML =
-    `Cruzamento da planilha de participantes Ápice (${int(A.totalApice)} mulheres) com a base de leads — por e-mail e confirmado pelo nome. Só agregados e depoimentos anonimizados.`;
+    `Cruzamento da planilha de participantes do Ápice (${int(total)} mulheres, linhas amarelas fora) com as respostas do Typeform — por e-mail e, se não achar, pelo nome. É uma lista (sem data), então esta aba mostra todas. Só agregados e depoimentos anonimizados. Dados de ${PF.generatedAtBR||'—'} (atualiza a cada 3h).`;
+  if(!n){ document.getElementById('apiceStats').innerHTML=''; document.getElementById('apiceNote').innerHTML='<div class="ins-text">Nenhuma participante do Ápice encontrada na base de leads.</div>';
+    audObjTable('#aObjTable',AUD.apice,A,pfOpen.apice,renderApice); audGrid(document.getElementById('aGrid'),AUD.apice,A); audQuotes(document.getElementById('aQuotes'),A,PA_T,null,16); return; }
+  const d=pfDist(A,PA_OFF), fat=fatEstimate(d), qlf=A.filter(r=>r[1]===1).length, ck=A.filter(r=>r[2]===1).length;
   document.getElementById('apiceStats').innerHTML =
-    statCard(int(A.totalApice),'Mulheres no Ápice') +
-    statCard(int(A.matched),'Encontradas na base de leads', `${int(A.matchedEmail)} por e-mail · ${int(A.matchedName)} por nome`) +
-    statCard(int(A.qualified),'Qualificadas (≥100k)') +
-    statCard(`R$ ${(A.fatMedia||0).toLocaleString('pt-BR')}`,'Faturamento médio /mês (estimado)');
+    statCard(int(total),'Mulheres no Ápice') +
+    statCard(int(n),'Encontradas na base de leads',`${int(M.matchedEmail||0)} por e-mail · ${int(M.matchedName||0)} por nome`) +
+    statCard(int(qlf),'Qualificadas (≥100k)',`${pct(qlf/n*100)} das encontradas`) +
+    statCard(fat?`R$ ${int(fat)}`:'—','Faturamento médio /mês (estimado)','pelo meio de cada faixa') +
+    statCard(int(ck),'Também compraram o Cocktail',`${pct(ck/n*100)} das encontradas`);
   document.getElementById('apiceNote').innerHTML =
-    `<div class="ins-text">📌 <b>${int(A.matched)} de ${int(A.totalApice)}</b> participantes foram encontradas na base de leads (o perfil abaixo é sobre essas). As outras <b>${int(naoBase)}</b> não estão na base com o mesmo e-mail/nome — provavelmente entraram por outro caminho (indicação, convite direto, VIP).</div>`;
-  document.getElementById('aFat').innerHTML = bars(A.fatDist,'var(--green)');
-  document.getElementById('aVoce').innerHTML = bars(A.voce,'var(--blue2)');
-  document.getElementById('aIntent').innerHTML = bars(A.intent,'var(--navy)');
-  document.getElementById('aEquipe').innerHTML = bars(A.equipe,'var(--blue)');
-  document.getElementById('aObjec').innerHTML = bars(arr(A.objec).map(x=>({label:objLabel(x.label),n:x.n,pct:x.pct})),'var(--yellow)');
-  const qs=arr(A.quotes);
-  document.getElementById('aQuotes').innerHTML = qs.length ? `<ul class="quotes">${qs.map(q=>`<li>“${esc(q)}”</li>`).join('')}</ul>` : '';
+    `<div class="ins-text">📌 <b>${int(n)} de ${int(total)}</b> participantes foram encontradas na base de leads (o perfil abaixo é sobre essas). As outras <b>${int(total-n)}</b> não estão na base com o mesmo e-mail/nome — provavelmente entraram por outro caminho (indicação, convite direto, VIP).</div>`;
+  audObjTable('#aObjTable',AUD.apice,A,pfOpen.apice,renderApice);
+  audGrid(document.getElementById('aGrid'),AUD.apice,A,d);
+  audQuotes(document.getElementById('aQuotes'),A,PA_T,null,16);
 }
 
 // ===================== datas (preenchimento de cada Cocktail) =====================
@@ -1056,6 +1063,7 @@ function init(){
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
     state.level=t.dataset.level; state.sort={key:'qlf',asc:false}; renderTable();
   });
+  document.querySelectorAll('#objAud button').forEach(b=>b.onclick=()=>{ state.objAud=b.dataset.aud; renderObjections(); });   // Objeções: qualificadas OU compradoras
   document.getElementById('applyRange').onclick=()=>{ document.getElementById('presets').querySelectorAll('button').forEach(x=>x.classList.remove('active')); setRange(document.getElementById('dStart').value,document.getElementById('dEnd').value); };
   document.getElementById('goalInput').onchange=e=>{ localStorage.setItem('ccn_goal',e.target.value||15000); render(); };
   const [s,e]=lastN(30); setRange(s,e);
