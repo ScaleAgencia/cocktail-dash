@@ -562,36 +562,56 @@ $estudo=[pscustomobject]@{
 }
 
 # ===================================================================
-#  LISTA DO APICE (participantes) — usada pela aba Apice, pela Ascensao e pelo perfil por pessoa
-#  Planilha REAL de participantes (ago/2026). Colunas [0]=nome [1]=email, sem cabecalho. Ticket R$150k.
-#  ⚠️ Linhas AMARELAS (fill FFF2CC) = DESCONSIDERAR (pedido do cliente). gviz/CSV nao traz cor -> le o
-#  export XLSX a cada build (cliente pinta/despinta e a dash acompanha sozinha). Se o XLSX falhar, usa a
-#  lista fixa abaixo (29 amarelas de 113 em out/2026 -> 84 participantes).
+#  APICE — planilha de VENDAS do Apice ("VENDAS MASTERMIND", out/2026). Fonte UNICA de tudo do Apice:
+#  participantes (perfil, Ascensao, "Viraram Apice") + financeiro (ROAS com Apice, caixa, receita recorrente).
+#  Colunas achadas por NOME: NOME, EMAIL, SITUACAO (Ativa/Inativa -> Inativa fica FORA de tudo, pedido do
+#  cliente), DATA COQUETEL (= dia da venda; a ENTRADA/SINAL e paga nesse dia), VALOR (ticket total), SINAL,
+#  Qntd Parcela (NAO inclui a entrada). Parcela = (VALOR - SINAL) / Qntd, paga todo dia 1 a partir do MES
+#  SEGUINTE a venda (regra do cliente, 21/10/2026). A coluna "Valor Parcela" so e conferida (vira aviso).
+#  ⚠️ Le o EXPORT CSV, NAO o gviz: o gviz APAGA texto em coluna de data/numero (ex.: "nao comprou cocktail
+#  (indicacao)" na data; observacoes de pagamento na "Valor Parcela"). 1a linha = titulo; cabecalho = a
+#  linha com EMAIL + SITUACAO. A planilha antiga (19Ee8..., linhas amarelas) foi aposentada.
 # ===================================================================
-$apList=@(); $apYellowAuto=$false
+$apList=@(); $apSales=@(); $apIssues=@(); $apInativas=0; $apAtivas=0
+function MoneyA($s){ $c=((Norm $s) -replace '[R$\s]',''); if($c -match '^\d{1,3}(\.\d{3})+(,\d+)?$' -or $c -match '^\d+(,\d+)?$'){ return [double]($c -replace '\.','' -replace ',','.') }; return $null }
+function ApIssue($l,$k,$x,$a,$b){ $script:apIssues += [pscustomobject]@{l=$l;k=$k;x=[string]$x;a=[math]::Round([double]$a,2);b=[math]::Round([double]$b,2)} }   # mesmo formato em todos (JSON 5.1)
 if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao' -or $Mode -eq 'estudo' -or $Mode -eq 'perfil'){
-  $APICE_ID='19Ee8ZK6yXk3D1DUssv3ASjS76rIAOqhDOLic2yfYQ1Q'
-  $APICE_EXCLUDE=@{}
-  try{
-    $axl=Join-Path $dataDir 'apice.xlsx'; (New-Object System.Net.WebClient).DownloadFile("https://docs.google.com/spreadsheets/d/$APICE_ID/export?format=xlsx",$axl)
-    $adir=Join-Path $dataDir 'apice_x'; if(Test-Path $adir){Remove-Item $adir -Recurse -Force}
-    Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($axl,$adir)
-    $stA=[xml](Get-Content "$adir\xl\styles.xml" -Raw -Encoding UTF8)
-    $yIds=@{}; $fi=0; foreach($f in $stA.styleSheet.fills.fill){ $rgb=''; if($f.patternFill.fgColor){$rgb=$f.patternFill.fgColor.rgb}; if($rgb -eq 'FFFFF2CC'){$yIds[$fi]=1}; $fi++ }
-    $xfA=@(); foreach($xf in $stA.styleSheet.cellXfs.xf){ $xfA+=[int]$xf.fillId }
-    $ssA=@(); if(Test-Path "$adir\xl\sharedStrings.xml"){ $sxA=[xml](Get-Content "$adir\xl\sharedStrings.xml" -Raw -Encoding UTF8); foreach($si in $sxA.sst.si){ $t=''; if($si.t){ if($si.t.'#text'){$t=$si.t.'#text'}else{$t=[string]$si.t} } elseif($si.r){ $t=($si.r|ForEach-Object{[string]$_.t}) -join '' }; $ssA+=$t } }
-    $wsA=[xml](Get-Content "$adir\xl\worksheets\sheet1.xml" -Raw -Encoding UTF8)
-    $nRowsA=0
-    foreach($row in $wsA.worksheet.sheetData.row){ $isY=$false; $em=''
-      foreach($c in $row.c){ $sx=0; if($c.s){$sx=[int]$c.s}; if($yIds.ContainsKey($xfA[$sx])){$isY=$true}
-        $val=''; if($c.t -eq 's'){ if($null -ne $c.v){$val=$ssA[[int]$c.v]} } elseif($null -ne $c.v){$val=[string]$c.v}; if($val -match '@'){$em=(Norm $val).ToLower()} }
-      if($em -match '@'){ $nRowsA++; if($isY){ $APICE_EXCLUDE[$em]=1 } } }
-    if($nRowsA -gt 0){ $apYellowAuto=$true }
-  }catch{ $APICE_EXCLUDE=@{}; $apYellowAuto=$false }
-  if(-not $apYellowAuto){ foreach($e in @('alinedraghifr@hotmail.com','andressahuve@gmail.com','brenda.fagundes@outlook.com','brunagrupobm@gmail.com','clickgo.viagens@gmail.com','clubedadisney@gmail.com','consultoriadenegociospt@gmail.com','contato.larissasteimbach@gmail.com','cristianekassim@gmail.com','daniela_vieiraloura@hotmail.com','denise0407@me.com','emanuella.pereirasantos@hotmail.com','fefreitas02@gmail.com','fernaroque@hotmail.com','francisdias@acerterh.com.br','kerastinni@gmail.com','larissa.georgean@gmail.com','liliane.kami@gmail.com','lolopuga@icloud.com','lucieners175@gmail.com','marcela@marcelamenezes.com','marcella@massotipaes.com.br','marciaceci26@gmail.com','nubiavfrodrigues@hotmail.com','priscila_reis@b2ytransportes.com.br','samarachaar2@gmail.com','sc@suellencampanhola.com','tkoproski@bloominternationaldoulas.com','vacris.santos2105@gmail.com')){ $APICE_EXCLUDE[$e]=1 } }
-  $aCsv=Join-Path $dataDir 'apice.csv'; Get-Sheet $APICE_ID '0' $aCsv
-  foreach($r in @(Read-Csv $aCsv)){ if($r.Count -lt 2){continue}; $em=(Norm $r[1]).ToLower(); if($em -notmatch '@'){continue}; if($APICE_EXCLUDE.ContainsKey($em)){continue}; $apList+=[pscustomobject]@{email=$em;key=(NameKey $r[0])} }
-  Write-Host ("APICE: {0} participantes | {1} amarelas fora ({2})" -f $apList.Count,$APICE_EXCLUDE.Count,$(if($apYellowAuto){'cor lida do XLSX'}else{'LISTA FIXA - XLSX falhou'}))
+  $APICE_ID='1bclGSGY51UvnFwY2zrRgwwrEXJL2Dgu8sb6OStGWNUE'; $APICE_GID='1900437058'
+  $aCsv=Join-Path $dataDir 'apice.csv'
+  (New-Object System.Net.WebClient).DownloadFile("https://docs.google.com/spreadsheets/d/$APICE_ID/export?format=csv&gid=$APICE_GID",$aCsv)
+  $aRows=@(Read-Csv $aCsv)
+  $aHi=-1; for($i=0;$i -lt [Math]::Min(8,$aRows.Count);$i++){ $jn=Deaccent (($aRows[$i]) -join '|'); if($jn -match 'email' -and $jn -match 'situa'){ $aHi=$i; break } }
+  if($aHi -lt 0){ Write-Host 'APICE: !!! cabecalho (EMAIL + SITUACAO) NAO encontrado na planilha -> Apice vazio neste build' }
+  else{
+    $ah=$aRows[$aHi]
+    function AH($pat){ for($k=0;$k -lt $script:ah.Count;$k++){ $h=((Deaccent (Norm $script:ah[$k])) -replace '\s+',' ').Trim(); if($h -like $pat){ return $k } }; return -1 }
+    function ACell($r,$c){ if($c -lt 0 -or $c -ge $r.Count){ return '' }; return (Norm $r[$c]) }
+    $A_NOME=AH '*nome*'; $A_EMAIL=AH '*email*'; $A_SIT=AH '*situa*'; $A_DATA=AH '*coquetel*'; if($A_DATA -lt 0){ $A_DATA=AH 'data*' }
+    $A_VALOR=AH 'valor'; $A_SINAL=AH '*sinal*'; if($A_SINAL -lt 0){ $A_SINAL=AH '*entrada*' }
+    $A_QTD=AH '*qntd*'; if($A_QTD -lt 0){ $A_QTD=AH '*qtd*' }; if($A_QTD -lt 0){ $A_QTD=AH '*quantidade*' }
+    $A_VPARC=AH 'valor parcela*'
+    for($i=$aHi+1;$i -lt $aRows.Count;$i++){ $r=$aRows[$i]; $ln=$i+1   # numero da linha NA PLANILHA (1 = titulo)
+      $em=(ACell $r $A_EMAIL).ToLower(); $nm=ACell $r $A_NOME
+      if($em -eq '' -and $nm -eq ''){ continue }                                   # linha vazia
+      if((Deaccent (ACell $r $A_SIT)) -match 'inativ'){ $apInativas++; continue }  # Inativa = desconsiderar
+      $apAtivas++
+      $vTxt=ACell $r $A_VALOR; $v=MoneyA $vTxt; $sTxt=ACell $r $A_SINAL; $s=MoneyA $sTxt
+      $qTxt=ACell $r $A_QTD; $q=0; if($qTxt -match '^\d+$'){ $q=[int]$qTxt }
+      $dTxt=ACell $r $A_DATA; $dt=''; if($dTxt -match '^(\d{1,2})/(\d{1,2})/(\d{4})'){ $dt=('{0}-{1:d2}-{2:d2}' -f $Matches[3],[int]$Matches[2],[int]$Matches[1]) }
+      $key=NameKey $nm
+      if($em -match '@' -or $key -match ' '){ $apList+=[pscustomobject]@{email=$(if($em -match '@'){$em}else{''});key=$key;valor=$(if($null -ne $v){$v}else{0.0})} }
+      if($null -eq $v){ ApIssue $ln 'novalor' $vTxt 0 0; continue }               # sem VALOR: fora do financeiro
+      if($null -eq $s){ if($sTxt -ne ''){ ApIssue $ln 'sinaltxt' $sTxt 0 0 }; $s=0.0 }
+      if($s -gt $v){ ApIssue $ln 'sinalmaior' '' $s $v; $s=$v }
+      $rest=$v-$s; $p=0.0; $n=0
+      if($rest -gt 0.5){ if($q -gt 0){ $p=$rest/$q; $n=$q } else { ApIssue $ln 'noqtd' $qTxt 0 $rest } }
+      $vpTxt=ACell $r $A_VPARC
+      if($vpTxt -ne '' -and $n -gt 0){ $vp=MoneyA $vpTxt
+        if($null -eq $vp){ ApIssue $ln 'vparctxt' $vpTxt 0 $p } elseif([math]::Abs($vp-$p) -gt 1){ ApIssue $ln 'vparc' '' $vp $p } }
+      if($dt -eq ''){ ApIssue $ln 'nodate' $dTxt 0 0 }
+      $apSales+=[pscustomobject]@{d=$dt;t=$(if($dt -eq ''){$dTxt}else{''});v=[math]::Round($v,2);s=[math]::Round($s,2);n=$n;p=[math]::Round($p,2)} }
+  }
+  Write-Host ("APICE: {0} ativas ({1} inativas fora) | {2} vendas no financeiro, {3} sem data | vendido R$ {4} | {5} avisos p/ conferir" -f $apAtivas,$apInativas,$apSales.Count,@($apSales | Where-Object { $_.d -eq '' }).Count,(M0 (($apSales | Measure-Object v -Sum).Sum)),$apIssues.Count)
 }
 
 # ===================================================================
@@ -679,7 +699,7 @@ function PPick($rs,$cut){ $first=$null; $pick=$null; $fd=''; $pd=''
   $des=Norm $pick[$script:L_DESAFIO]; if($des -eq ''){ foreach($x in $rs){ $t=Norm $x[$script:L_DESAFIO]; if($t -ne ''){ $des=$t } } }
   return [pscustomobject]@{a=$a;des=$des;first=$fd;pick=$pick} }
 # participantes do Apice: e-mail OU nome igual ao da compradora (mesma regra da Ascensao)
-$apE=@{}; $apN=@{}; foreach($w in $apList){ $apE[$w.email]=1; if($w.key -match ' '){ $apN[$w.key]=1 } }
+$apE=@{}; $apN=@{}; foreach($w in $apList){ if($w.email -ne ''){ $apE[$w.email]=1 }; if($w.key -match ' '){ $apN[$w.key]=1 } }
 # compras (kiwify paga + extras do controle manual; cancelada fora) casadas com o typeform por e-mail.
 # pid = id anonimo da pessoa (conta "quantas viraram Apice" por PESSOA, mesmo com 2 compras).
 $pBuy=New-Object System.Collections.Generic.List[object]; $pPid=@{}
@@ -701,7 +721,7 @@ foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $e=(Norm $r[$K_
   $nk=NameKey $r[$K_NOME]; if($nk -match ' ' -and $vendaExclN.ContainsKey($nk)){continue}; if($e -ne ''){ $kE[$e]=1 }; if($nk -match ' '){ $kN[$nk]=1 } }
 $pApRows=New-Object System.Collections.Generic.List[object]; $apMatchE=0; $apMatchN=0
 foreach($w in $apList){ $rs=$null
-  if($pByEmail.ContainsKey($w.email)){ $rs=$pByEmail[$w.email]; $apMatchE++ }
+  if($w.email -ne '' -and $pByEmail.ContainsKey($w.email)){ $rs=$pByEmail[$w.email]; $apMatchE++ }
   elseif($w.key -match ' ' -and $ldName.ContainsKey($w.key) -and $ldName[$w.key].Count -eq 1){ $one=$ldName[$w.key][0]; $oe=(Norm $one[$L_EMAIL]).ToLower()
     if($oe -ne '' -and $pByEmail.ContainsKey($oe)){ $rs=$pByEmail[$oe] } elseif((Norm $one[$L_DATE]) -match '^\d{4}-\d{2}-\d{2}$'){ $rs=New-Object System.Collections.Generic.List[object]; $rs.Add($one) }
     if($null -ne $rs){ $apMatchN++ } }
@@ -733,50 +753,26 @@ $perfilJson='{"generatedAt":"'+$nowIso+'","generatedAtBR":"'+$nowBR+'","d0":"'+$
   ',"buckets":' + (ConvertTo-Json -InputObject ([object[]]$OBJ_ORDER) -Compress) +
   ',"q":' + (ConvertTo-Json -InputObject ([object[]]$qDefs) -Depth 4 -Compress) +
   ',"L":[' + ($pL -join ',') + '],"B":[' + ($pB -join ',') + '],"A":[' + ($pA -join ',') + ']' +
-  ',"apice":{"total":' + $apList.Count + ',"matchedEmail":' + $apMatchE + ',"matchedName":' + $apMatchN + ',"yellowAuto":' + $(if($apYellowAuto){'true'}else{'false'}) + '}' +
+  ',"apice":{"total":' + $apAtivas + ',"inativas":' + $apInativas + ',"matchedEmail":' + $apMatchE + ',"matchedName":' + $apMatchN + '}' +
   ',"T":' + (ConvertTo-Json -InputObject ([object[]]$PTXT.ToArray()) -Compress) + '}'
 [IO.File]::WriteAllText((Join-Path $root 'data-perfil.js'), ("window.DASH_PERFIL="+$perfilJson+";"), [System.Text.UTF8Encoding]::new($false))
 Write-Host ("PERFIL: {0} qualificadas | {1} compras casadas c/ typeform ({2} de Apice) | Apice {3}/{4} c/ perfil (email={5} nome={6}) | {7} textos | d0={8} | cols novas: civil={9} filhos={10} margem={11} fe={12} busca={13} pres={14} | {15}s" -f $pLeadRows.Count,$pBuy.Count,@($pBuy | Where-Object { $_.ap -eq 1 }).Count,$pApRows.Count,$apList.Count,$apMatchE,$apMatchN,$PTXT.Count,$P_D0s,$L_CIVIL,$L_FILHOS,$L_MARGEM,$L_FE,$L_BUSCA,$L_PRES,[int]$pSw.Elapsed.TotalSeconds)
 }
 
 # ===================================================================
-#  ÁPICE — coorte da planilha de participantes × base de leads
-#  (e-mail+nome só p/ casar; publica só agregados/anonimizado)
+#  APICE (financeiro) + ASCENSAO — tudo da planilha VENDAS MASTERMIND (secao "APICE" acima)
+#  data-apice.js = vendas ativas {d=dia do coquetel (venda+entrada), t=texto se nao for data, v=ticket total,
+#  s=entrada/sinal, n=qtd parcelas, p=valor da parcela} + avisos p/ conferir na planilha. O FRONT monta o
+#  cronograma (entrada no dia + parcela todo dia 1 a partir do mes seguinte) -> "hoje" e sempre o real.
+#  O perfil das participantes vem do data-perfil.js (linhas A).
 # ===================================================================
 if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
-  # $apList (participantes, amarelas fora) ja foi carregada acima — secao "LISTA DO APICE"
-  $apEmail=@{}; $apName=@{}
-  foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); $full=NameKey (($r[0])+' '+($r[1]))
-    if($e -ne '' -and -not $apEmail.ContainsKey($e)){ $apEmail[$e]=$r }
-    if($full -match ' '){ if(-not $apName.ContainsKey($full)){ $apName[$full]=New-Object System.Collections.Generic.List[object] }; $apName[$full].Add($r) } }
-  $coh=@(); $mEmail=0; $mName=0
-  foreach($w in $apList){ $lead=$null
-    if($apEmail.ContainsKey($w.email)){ $lead=$apEmail[$w.email]; $mEmail++ }
-    elseif($w.key -ne '' -and $apName.ContainsKey($w.key) -and $apName[$w.key].Count -eq 1){ $lead=$apName[$w.key][0]; $mName++ }
-    if($lead){ $coh+=[pscustomobject]@{fat=(Norm $lead[$L_FAT]);voce=(Norm $lead[$L_VOCE]);eq=(Norm $lead[$L_EQ]);intent=(Norm $lead[$L_INTENT]);desafio=(Norm $lead[$L_DESAFIO])} } }
-  $nAp=$apList.Count; $nC=$coh.Count
-  function ADist($items,$prop,$order){ $h=@{}; $tot=$items.Count; foreach($b in $items){ $v=CleanOpt $b.$prop; if($v -eq ''){continue}; if(-not $h.ContainsKey($v)){$h[$v]=0}; $h[$v]++ }
-    $keys=@(); if($order){ foreach($o in $order){ if($h.ContainsKey($o)){$keys+=$o} } } else { $keys=@($h.GetEnumerator()|Sort-Object Value -Descending|ForEach-Object{$_.Key}) }
-    $out=@(); foreach($k in $keys){ $pp=0.0; if($tot){$pp=[math]::Round($h[$k]/$tot*100,1)}; $out+=[pscustomobject]@{label=$k;n=$h[$k];pct=$pp} }; return ,$out }
-  $apFatV=@($coh | Where-Object {$FAT_MID.ContainsKey($_.fat)} | ForEach-Object {$FAT_MID[$_.fat]})
-  $apFatMedia=0; if($apFatV.Count){$apFatMedia=[math]::Round(($apFatV|Measure-Object -Average).Average,0)}
-  $apObjB=@{}; foreach($b in $coh){ $bk=Bucket $b.desafio; if(-not $apObjB.ContainsKey($bk)){$apObjB[$bk]=0}; $apObjB[$bk]++ }
-  $apObj=@(); foreach($k in $OBJ_ORDER){ if($apObjB.ContainsKey($k) -and $apObjB[$k] -gt 0){ $pp=0.0; if($nC){$pp=[math]::Round($apObjB[$k]/$nC*100,1)}; $apObj+=[pscustomobject]@{label=$k;n=$apObjB[$k];pct=$pp} } }
-  $aqc=@(); foreach($b in $coh){ $t=Norm $b.desafio; if($t.Length -lt 22 -or $t.Length -gt 180){continue}
-    if($t -match '@' -or $t -match 'http' -or $t -match '\d{4,}'){continue}
-    $cx=($t.ToLower() -replace '\s',''); if(($cx.ToCharArray()|Select-Object -Unique).Count -le 4){continue}; $aqc+=$t }
-  $apQuotes=@($aqc | Select-Object -Unique | Select-Object -First 16)
-  $apFat=ADist $coh 'fat' $FAT_ORDER; $apVoce=ADist $coh 'voce' $null; $apInt=ADist $coh 'intent' $null; $apEq=ADist $coh 'eq' $EQ_ORDER
-  $apice=[pscustomobject]@{
-    generatedAt=$nowIso; generatedAtBR=$nowBR
-    totalApice=$nAp; matched=$nC; matchedEmail=$mEmail; matchedName=$mName; qualified=($coh|Where-Object{ IsQual $_.fat $_.voce }).Count; fatMedia=$apFatMedia
-    fatDist=@($apFat); voce=@($apVoce); intent=@($apInt); equipe=@($apEq)
-    objec=@($apObj); quotes=@($apQuotes) }
+  $apTotVal=0.0; foreach($x in $apSales){ $apTotVal += $x.v }
+  $apice=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; ativas=$apAtivas; inativas=$apInativas
+    sales=@($apSales); issues=@($apIssues) }
   if($Mode -eq 'all' -or $Mode -eq 'apice'){ WriteJs 'data-apice.js' 'DASH_APICE' $apice }
-  Write-Host ("ÁPICE: {0}/{1} casadas (email={2} nome={3}) qualif={4}" -f $nC,$nAp,$mEmail,$mName,$apice.qualified)
 
-  # --- ASCENSÃO: escada de valor Tráfego → Cocktail → Ápice (ingresso R$150k) ---
-  $APICE_TICKET=150000
+  # --- ASCENSAO: escada de valor Trafego -> Cocktail -> Apice. Valor REAL de cada participante (VALOR da planilha) ---
   $kByE=@{}; $kByN=@{}  # compradoras do Cocktail (kiwify paid): email/nome(Cliente) -> data da compra
   foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
     $e=(Norm $r[$K_EMAIL]).ToLower(); if($vendaExclE.ContainsKey($e)){continue}; $nm=NameKey $r[$K_NOME]; if($nm -match ' ' -and $vendaExclN.ContainsKey($nm)){continue}   # cancelado nao ascende
@@ -784,14 +780,15 @@ if($Mode -eq 'all' -or $Mode -eq 'apice' -or $Mode -eq 'ascensao'){
     if($nm -match ' ' -and -not $kByN.ContainsKey($nm)){$kByN[$nm]=$d} }
   $ascDaily=@{}; $ascE=0; $ascN=0
   foreach($w in $apList){ $d=$null
-    if($kByE.ContainsKey($w.email)){$d=$kByE[$w.email];$ascE++}
+    if($w.email -ne '' -and $kByE.ContainsKey($w.email)){$d=$kByE[$w.email];$ascE++}
     elseif($w.key -match ' ' -and $kByN.ContainsKey($w.key)){$d=$kByN[$w.key];$ascN++}
-    if($d){ if(-not $ascDaily.ContainsKey($d)){$ascDaily[$d]=0}; $ascDaily[$d]++ } }
-  $ascArr=@($ascDaily.GetEnumerator()|Sort-Object Name|ForEach-Object{[pscustomobject]@{date=$_.Name;asc=$_.Value}})
-  $asc=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; apiceTicket=$APICE_TICKET
-    totalApice=$nAp; ascTotal=($ascE+$ascN); ascByEmail=$ascE; ascByName=$ascN; ascDaily=$ascArr }
+    if($d){ if(-not $ascDaily.ContainsKey($d)){ $ascDaily[$d]=[pscustomobject]@{date=$d;asc=0;val=0.0} }; $ascDaily[$d].asc++; $ascDaily[$d].val += $w.valor } }
+  $ascArr=@($ascDaily.Values | Sort-Object date | ForEach-Object { [pscustomobject]@{date=$_.date;asc=$_.asc;val=[math]::Round($_.val,2)} })
+  $apTicket=0; if($apSales.Count){ $apTicket=[math]::Round($apTotVal/$apSales.Count,2) }
+  $asc=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; apiceTicket=$apTicket; totalValor=[math]::Round($apTotVal,2)
+    totalApice=$apAtivas; ascTotal=($ascE+$ascN); ascByEmail=$ascE; ascByName=$ascN; ascDaily=$ascArr }
   if($Mode -eq 'all' -or $Mode -eq 'ascensao'){ WriteJs 'data-ascensao.js' 'DASH_ASC' $asc }
-  Write-Host ("ASCENSÃO: {0} rastreadas (email={1} nome={2}) de {3} Ápice" -f ($ascE+$ascN),$ascE,$ascN,$nAp)
+  Write-Host ("ASCENSAO: {0} rastreadas (email={1} nome={2}) de {3} ativas no Apice | ticket medio R$ {4}" -f ($ascE+$ascN),$ascE,$ascN,$apAtivas,(M0 $apTicket))
 }
 
 # ===================================================================

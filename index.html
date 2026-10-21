@@ -65,9 +65,17 @@
       <div class="rev-val" id="revRoas">0x</div>
       <div class="rev-delta" id="revRoasD"></div>
     </div>
+    <div class="rev-conn rev-plus">+</div>
+    <div class="rev-card rev-apice" id="revApCard">
+      <div class="rev-top"><span class="rev-ic">👑</span><span class="rev-lbl">ROAS com Ápice <span class="sub">Cocktail + Ápice</span></span></div>
+      <div class="rev-val" id="revApRoas">0x</div>
+      <div class="rev-ap-sub" id="revApSub"></div>
+      <div class="rev-delta" id="revApD"></div>
+    </div>
   </section>
   <div class="rev-foot" id="revFoot"></div>
   <div class="rev-meta" id="revMeta"></div>
+  <section class="ap-cash" id="apCash"></section>
 
   <section class="grid">
     <!-- Investment + funnel -->
@@ -221,9 +229,22 @@
 
   <div id="pageApice" hidden>
     <div class="card ins-head">
-      <div class="chart-title">👑 Ápice — perfil da coorte</div>
-      <div class="micro-note" id="apiceIntro">—</div>
+      <div class="chart-title">👑 Ápice — caixa, receita recorrente e perfil</div>
+      <div class="micro-note" id="apFinIntro">—</div>
     </div>
+    <section class="ap-hero" id="apFin"></section>
+    <div class="card">
+      <div class="chart-title">📅 Caixa do Ápice mês a mês</div>
+      <div class="micro-note">Entradas no dia do coquetel + parcelas todo dia 1. Meses depois de hoje = previsão (o que já está contratado). Passe o mouse nas barras.</div>
+      <ul class="ap-legend"><li><i class="sw ap-p"></i>Parcelas (dia 1)</li><li><i class="sw ap-s"></i>Entradas (dia do coquetel)</li><li><i class="sw ap-f"></i>Previsão (meses futuros)</li></ul>
+      <div class="ap-chart" id="apChart"></div>
+    </div>
+    <div class="card">
+      <div class="chart-title">🍸 Vendas do Ápice por Cocktail</div>
+      <div class="micro-note">Cada linha é uma data de coquetel: quanto foi vendido, quanto já entrou de caixa, quanto ainda vai entrar e quanto pinga por mês agora.</div>
+      <div class="table-scroll pf-scroll"><table id="apCohort" class="ap-table"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card sec-card ap-sec"><div class="chart-title">🧬 Perfil das participantes do Ápice</div><div class="micro-note" id="apiceIntro">—</div></div>
     <div class="stat-row" id="apiceStats"></div>
     <div class="card note-card" id="apiceNote"></div>
     <div class="card">
@@ -237,6 +258,7 @@
       <div class="micro-note">Depoimentos reais do campo "principal desafio", anonimizados (sem nome/e-mail/telefone).</div>
       <div id="aQuotes" class="voices" style="margin-top:12px"></div>
     </div>
+    <div class="card ap-issues" id="apIssues" hidden></div>
   </div>
 
   <div id="pageAscensao" hidden>
@@ -249,7 +271,7 @@
     <div class="card asc-full" id="ascFull"></div>
     <div class="card">
       <div class="chart-title">Do tráfego ao Ápice</div>
-      <div class="micro-note">Cada degrau multiplica o valor: o tráfego traz o Cocktail, e uma fatia do Cocktail sobe pro Ápice (ingresso de R$ 150 mil).</div>
+      <div class="micro-note">Cada degrau multiplica o valor: o tráfego traz o Cocktail, e uma fatia do Cocktail sobe pro Ápice (valor real de cada venda, da planilha do Ápice).</div>
       <div class="ladder" id="ascLadder"></div>
     </div>
     <div class="card note-card" id="ascNote"></div>
@@ -287,7 +309,7 @@
 <script>
   // carrega os dados + app sempre frescos (cache-bust por timestamp) — F5 normal ja mostra o ultimo
   (function(){ var v = Date.now();
-    ['data.js','data-perfil.js','data-insights.js','data-ascensao.js','data-datas.js','app.js'].forEach(function(f){
+    ['data.js','data-perfil.js','data-apice.js','data-insights.js','data-ascensao.js','data-datas.js','app.js'].forEach(function(f){
       document.write('<script src="' + f + '?t=' + v + '"><\/script>');
     });
   })();
