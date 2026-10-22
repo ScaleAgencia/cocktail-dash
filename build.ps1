@@ -195,7 +195,9 @@ try{
     if($nm -match '(?i)^\s*(\d{1,2})\s*(fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)'){
       $VENDAS_GIDS+=$gid; $VENDAS_EVDATE[$gid]=('2026-{0}-{1:d2}' -f $mesMap[$Matches[2].ToLower()],[int]$Matches[1]) } }
 }catch{}
+$evDiscovered=($VENDAS_GIDS.Count -ge 10)   # so confio no conjunto de datas se veio da descoberta (fallback pode estar desatualizado)
 if($VENDAS_GIDS.Count -lt 10){ $VENDAS_GIDS=$VENDAS_GIDS_FB; $VENDAS_EVDATE=$VENDAS_EVDATE_FB }   # fallback se a descoberta falhar
+$evTabDates=@{}; foreach($v in $VENDAS_EVDATE.Values){ $evTabDates[$v]=1 }   # datas que TEM aba = eventos que existem
 
 # --- CANCELAMENTOS: quem o comercial MARCOU sai de TUDO (vaga + faturamento + venda), por e-mail E nome ---
 # Sinais: (a) linha VERMELHA (fill FF0000) no controle; (b) a aba "cancelado". gviz nao traz cor -> XLSX.
@@ -265,6 +267,7 @@ foreach($vg in $VENDAS_GIDS){
     $nmc=NameKey $nome; if($nmc -match ' ' -and $vendaExclN.ContainsKey($nmc)){ continue }   # ...ou por nome
     $evk=''; $sel=''; for($ci=0;$ci -lt $row.Count;$ci++){ $c=Norm $row[$ci]; if($c -match $reEvDate){ $evk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); if($ci+1 -lt $row.Count){ $sel=Norm $row[$ci+1] }; break } }
     if($evk -eq ''){ $evk=$tabEv }                   # fallback: data do evento da propria aba
+    elseif($evDiscovered -and $tabEv -ne '' -and -not $evTabDates.ContainsKey($evk)){ $evk=$tabEv }   # col G com data que NAO tem aba (typo, ex. 08/04 na aba 7 Abril; data da compra no lugar do evento) -> evento da propria aba
     $manEvByEmail[$e]=[pscustomobject]@{ev=$evk;val=$val}   # col G p/ Datas — ULTIMA aba vence (reschedule mais recente)
     if($kiwPaidEmails.ContainsKey($e)){ continue }   # FUNIL: so nao-kiwify por e-mail
     $nk=NameKey $nome; if($nk -match ' ' -and $kiwNames.ContainsKey($nk)){ continue }   # ...E nao-kiwify por NOME (mesma pessoa c/ e-mail digitado diferente/typo) -> nao duplica a venda no funil/ROAS
