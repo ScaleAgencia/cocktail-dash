@@ -23,7 +23,8 @@
   </header>
 
   <nav class="pagenav">
-    <button class="pagebtn active" data-page="funnel">📊 Funil</button>
+    <button class="pagebtn active" data-page="consolidado">🧭 Consolidado</button>
+    <button class="pagebtn" data-page="funnel">📊 Funil</button>
     <button class="pagebtn" data-page="sd">🩺 SD</button>
     <button class="pagebtn" data-page="datas">📅 Datas</button>
     <button class="pagebtn" data-page="obj">🧠 Objeções</button>
@@ -46,7 +47,52 @@
     </div>
   </section>
 
-  <div id="pageFunnel">
+  <div id="pageConsolidado">
+    <section class="cx-hero" id="cxHero"></section>
+
+    <div class="card cx-card">
+      <div class="cx-h"><div><div class="cx-t">Competência</div><div class="cx-s">Dia a dia no fim do período escolhido, com o total e a média por dia · 👑 = Ápice (pela data do Cocktail em que foi vendido)</div></div></div>
+      <div class="table-scroll"><table class="cx-table" id="cxComp"></table></div>
+    </div>
+
+    <div class="card cx-card">
+      <div class="cx-h"><div><div class="cx-t">Lotação por evento</div><div class="cx-s">Cocktails com data no período (e os próximos, se o período vai até hoje) · cada um tem 30 vagas · convidada ocupa vaga, mas não é venda paga</div></div></div>
+      <div class="table-scroll"><table class="cx-table" id="cxLot"></table></div>
+    </div>
+
+    <div class="card cx-card">
+      <div class="cx-h"><div><div class="cx-t">Perfil de faturamento das compradoras</div><div class="cx-s">Compradoras pagas de cada Cocktail pela resposta de faturamento mensal (Typeform; se não tiver, o Forms) · convidadas ficam fora</div></div></div>
+      <div class="table-scroll"><table class="cx-table" id="cxFat"></table></div>
+    </div>
+
+    <div class="card cx-card">
+      <div class="cx-h"><div><div class="cx-t">Vendas por dia</div><div class="cx-s">Cocktail pela data da compra · Ápice pela data do Cocktail em que foi vendido</div></div>
+        <div class="cx-legend"><span><i style="background:var(--navy)"></i>Cocktail</span><span><i style="background:#e9b03b"></i>Ápice</span></div></div>
+      <div id="cxSales" class="cx-chart"></div>
+    </div>
+
+    <div class="card cx-card">
+      <div class="cx-h"><div><div class="cx-t">Funil</div><div class="cx-s" id="cxFunNote"></div></div></div>
+      <div class="cx-ctrl">
+        <label>Visão <select id="cxView"><option value="d">Diário</option><option value="w">Semanal</option><option value="m">Mensal</option></select></label>
+        <label>Colunas <input type="number" id="cxCols" min="2" max="14" value="7"></label>
+        <label>Vendedora <select id="cxSeller"><option value="">Todas</option></select></label>
+        <label class="cx-chk"><input type="checkbox" id="cxToday" checked> Com o dia de hoje</label>
+      </div>
+      <div class="table-scroll"><table class="cx-table cx-fun" id="cxFun"></table></div>
+    </div>
+
+    <div class="card cx-card" id="cxDayCard">
+      <div class="cx-h"><div class="cx-t" id="cxDayTitle">Investimento por dia</div>
+        <div class="cx-seg" id="cxBrk"><button data-b="none" class="on">Sem quebra</button><button data-b="camp">Campanha</button><button data-b="set">Conjunto</button><button data-b="ad">Criativo</button></div></div>
+      <div id="cxDay" class="cx-chart"></div>
+      <div class="cx-legend" id="cxDayLegend"></div>
+    </div>
+
+    <div class="cx-notes"><b>Como ler:</b> pessoas = vagas ocupadas nos Cocktails (pagas + convidadas), pela coluna G da planilha do comercial · vendas, receita, leads e investimento seguem a data de cada dia (compra, lead, gasto com imposto) · vendas = Kiwify + planilha do comercial, sem contar a mesma pessoa duas vezes · Ápice = planilha VENDAS MASTERMIND (só ativas), datado pelo Cocktail em que a venda foi feita · ROAS com Ápice = (receita do Cocktail + valor total das vendas do Ápice) ÷ investimento · dias úteis = segunda a sexta.</div>
+  </div>
+
+  <div id="pageFunnel" hidden>
   <section class="rev-block" id="revBlock">
     <div class="rev-card rev-inv">
       <div class="rev-top"><span class="rev-ic">💸</span><span class="rev-lbl">Investimento <span class="sub">com imposto</span></span></div>

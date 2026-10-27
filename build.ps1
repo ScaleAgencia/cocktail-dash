@@ -280,7 +280,7 @@ foreach($vg in $VENDAS_GIDS){
     $evk=''; $sel=''; for($ci=0;$ci -lt $row.Count;$ci++){ $c=Norm $row[$ci]; if($c -match $reEvDate){ $evk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); if($ci+1 -lt $row.Count){ $sel=Norm $row[$ci+1] }; break } }
     if($evk -eq ''){ $evk=$tabEv }                   # fallback: data do evento da propria aba
     elseif($evDiscovered -and $tabEv -ne '' -and -not $evTabDates.ContainsKey($evk)){ $evk=$tabEv }   # col G com data que NAO tem aba (typo, ex. 08/04 na aba 7 Abril; data da compra no lugar do evento) -> evento da propria aba
-    $manEvByEmail[$e]=[pscustomobject]@{ev=$evk;val=$val;guest=$isGuest}   # col G p/ Datas — ULTIMA aba vence (reschedule mais recente)
+    $manEvByEmail[$e]=[pscustomobject]@{ev=$evk;val=$val;guest=$isGuest;nome=$nome}   # col G p/ Datas — ULTIMA aba vence (reschedule mais recente)
     if($isGuest){ continue }                         # convidada: so a vaga, nunca venda
     if($kiwPaidEmails.ContainsKey($e)){ continue }   # FUNIL: so nao-kiwify por e-mail
     $nk=NameKey $nome; if($nk -match ' ' -and $kiwNames.ContainsKey($nk)){ continue }   # ...E nao-kiwify por NOME (mesma pessoa c/ e-mail digitado diferente/typo) -> nao duplica a venda no funil/ROAS
@@ -823,17 +823,44 @@ if($Mode -eq 'all' -or $Mode -eq 'datas'){
   # espelha o controle delas — NÃO adiciona vendas que só estão na kiwify (essas contam no funil/ROAS,
   # mas só viram "vaga" quando o comercial lançar). Evita divergência com a contagem do time.
   $personEv=[ordered]@{}
-  foreach($e in $manEvByEmail.Keys){ $m=$manEvByEmail[$e]; if($m.ev -eq ''){continue}; $personEv[$e]=[pscustomobject]@{dk=$m.ev;rev=$m.val;guest=[bool]$m.guest} }
+  foreach($e in $manEvByEmail.Keys){ $m=$manEvByEmail[$e]; if($m.ev -eq ''){continue}; $personEv[$e]=[pscustomobject]@{dk=$m.ev;rev=$m.val;guest=[bool]$m.guest;nome=[string]$m.nome} }
+  # faixa de faturamento de cada COMPRADORA (aba Consolidado: "Perfil de faturamento das compradoras" por evento).
+  # Ultima resposta do Typeform; quem nao tem, a do Forms. Chaves ASCII (rotulos ficam no app.js). Convidada fica fora.
+  function FatKey($s){ $f=((Deaccent (Norm $s)) -replace '[_\s]+',' ').Trim(); if($f -eq ''){ return '' }
+    if($f -match 'menos'){ return 'lt100' }
+    if($f -match '^entre r\$ ?(5|10|50) mil'){ return 'lt100' }
+    if($f -match '100 ?(k|mil) a 300' -or $f -match 'entre r\$ ?100 mil e r\$ ?200'){ return 'f100' }
+    if($f -match '300 ?(k|mil) a 500'){ return 'f300' }
+    if($f -match '500 ?(k|mil) a 1'){ return 'f500' }
+    if($f -match 'acima de 1 ?(m|milhao)'){ return 'f1m' }
+    if($f -match 'acima de 200'){ return 'f200old' }   # opcao antiga do Typeform (ate ago/26)
+    return '' }
+  $fatByEmail=@{}; $fatDt=@{}
+  foreach($r in $ld){ $e=(Norm $r[$L_EMAIL]).ToLower(); if($e -notmatch '@'){continue}; $k=FatKey $r[$L_FAT]; if($k -eq ''){continue}; $d=Norm $r[$L_DATE]
+    if(-not $fatByEmail.ContainsKey($e) -or $d -ge $fatDt[$e]){ $fatByEmail[$e]=$k; $fatDt[$e]=$d } }
+  foreach($r in $ffd){ $e=(Norm $r[$FF_EMAIL]).ToLower(); if($e -notmatch '@' -or $fatByEmail.ContainsKey($e)){continue}; $k=FatKey $r[$FF_FAT]; if($k -ne ''){ $fatByEmail[$e]=$k } }
+  # 2a tentativa pelo NOME (o comercial as vezes lanca outro e-mail): 1o + ultimo nome; so vale se esse nome
+  # aponta p/ UM unico e-mail na base de leads (homonimas ficam de fora). Tira o "(M)" que o comercial poe no nome.
+  # E os nomes do meio do nome mais curto tem que estar no mais longo ("Debora Mussel Grandi de Medeiros" NAO casa
+  # com "Debora Melo de Medeiros"; "Mariana Menezes" casa com "Mariana Rocha Menezes").
+  function NameKey2($s){ $w=@(((NameKey ($s -replace '\([^)]*\)','')) -split ' ') | Where-Object { $_ -ne '' }); if($w.Count -lt 2){ return '' }; return $w[0]+' '+$w[$w.Count-1] }
+  function NameToks($s){ $t=@{}; foreach($w in ((NameKey ($s -replace '\([^)]*\)','')) -split ' ')){ if($w -ne '' -and $w -notmatch '^(de|da|do|das|dos|e)$'){ $t[$w]=1 } }; return $t }
+  function TokSubset($a,$b){ if($a.Count -le $b.Count){ $sm=$a; $lg=$b } else { $sm=$b; $lg=$a }; foreach($k in $sm.Keys){ if(-not $lg.ContainsKey($k)){ return $false } }; return $true }
+  $fatByName=@{}; $fatNmDt=@{}; $fatNmTok=@{}; $nmEmails=@{}
+  foreach($r in $ld){ $k=FatKey $r[$L_FAT]; if($k -eq ''){continue}; $full=(Norm $r[0])+' '+(Norm $r[1]); $nk=NameKey2 $full; if($nk -eq ''){continue}
+    if(-not $nmEmails.ContainsKey($nk)){ $nmEmails[$nk]=@{} }; $nmEmails[$nk][(Norm $r[$L_EMAIL]).ToLower()]=1
+    $d=Norm $r[$L_DATE]; if(-not $fatByName.ContainsKey($nk) -or $d -ge $fatNmDt[$nk]){ $fatByName[$nk]=$k; $fatNmDt[$nk]=$d; $fatNmTok[$nk]=NameToks $full } }
+  $fatNameHits=0
   $evMap=@{}
   foreach($e in $personEv.Keys){ $p=$personEv[$e]; $dk=$p.dk
-    if(-not $evMap.ContainsKey($dk)){ $lbl="Evento $dk"; try{ $lbl='Evento '+([datetime]::ParseExact($dk,'yyyy-MM-dd',$null)).ToString('dd/MM') }catch{}; $evMap[$dk]=[pscustomobject]@{ev=$lbl;dateKey=$dk;vendas=0;conv=0;revenue=0.0} }
-    $o=$evMap[$dk]; $o.vendas++; if($p.guest){ $o.conv++ }; $o.revenue += $p.rev }   # vendas = VAGAS ocupadas (inclui convidadas, que entram com R$ 0)
+    if(-not $evMap.ContainsKey($dk)){ $lbl="Evento $dk"; try{ $lbl='Evento '+([datetime]::ParseExact($dk,'yyyy-MM-dd',$null)).ToString('dd/MM') }catch{}; $evMap[$dk]=[pscustomobject]@{ev=$lbl;dateKey=$dk;vendas=0;conv=0;revenue=0.0;fat=[ordered]@{}} }
+    $o=$evMap[$dk]; $o.vendas++; if($p.guest){ $o.conv++ } else { $fk=$fatByEmail[$e]; if(-not $fk){ $nk=NameKey2 $p.nome; if($nk -ne '' -and $fatByName.ContainsKey($nk) -and $nmEmails[$nk].Count -eq 1 -and (TokSubset (NameToks $p.nome) $fatNmTok[$nk])){ $fk=$fatByName[$nk]; $fatNameHits++ } }; if(-not $fk){ $fk='none' }; if($o.fat.Contains($fk)){ $o.fat[$fk]++ } else { $o.fat[$fk]=1 } }; $o.revenue += $p.rev }   # vendas = VAGAS ocupadas (inclui convidadas, que entram com R$ 0)
   $evArr=@()
-  foreach($e in $evMap.Values){ $evArr+=[pscustomobject]@{ev=$e.ev;dateKey=$e.dateKey;vendas=$e.vendas;conv=$e.conv;revenue=[math]::Round($e.revenue,2)} }
+  foreach($e in $evMap.Values){ $evArr+=[pscustomobject]@{ev=$e.ev;dateKey=$e.dateKey;vendas=$e.vendas;conv=$e.conv;revenue=[math]::Round($e.revenue,2);fat=$e.fat} }
   $evArr=@($evArr | Sort-Object dateKey)
   $datas=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; meta=30; today=$dmax; events=$evArr }
   WriteJs 'data-datas.js' 'DASH_DATAS' $datas
-  Write-Host ("DATAS: {0} eventos" -f $evArr.Count)
+  Write-Host ("DATAS: {0} eventos | faixa de faturamento: {1} compradoras por e-mail + {2} pelo nome" -f $evArr.Count,@($personEv.Keys | Where-Object { $fatByEmail.ContainsKey($_) }).Count,$fatNameHits)
 }
 
 # ---- emit (por modo) ----------------------------------------------

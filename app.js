@@ -827,6 +827,262 @@ function renderHealth(cur,prev){
     </div>`;
 }
 
+// ===================== CONSOLIDADO (aba principal: Cocktail + Ápice num lugar só) =====================
+// Topo = vagas por Cocktail (cada taça = 1 vaga; dourada = comprou o Ápice; contorno = convidada) + resumo.
+// Embaixo = report: competência, lotação por evento, perfil de faturamento, vendas/dia, funil e gráfico por dia.
+// Tudo segue o seletor de período. Eventos: data do Cocktail dentro do período; se o período vai até hoje,
+// entram também os próximos Cocktails (abertos), porque as vagas deles já estão sendo vendidas.
+const CX = { view:'d', cols:7, seller:'', withToday:true, metric:'spend', brk:'none' };
+const CX_TODAY = AP_TODAY;
+const WD = ['dom','seg','ter','qua','qui','sex','sáb'];
+const cxDM = s => `${s.slice(8,10)}/${s.slice(5,7)}`;
+const cxDMes = s => { const d=parseD(s); return `${d.getDate()} ${MES[d.getMonth()]}`; };
+const m0 = v => 'R$ '+nf0.format(Math.round(v||0));
+const n1 = v => (v||0).toLocaleString('pt-BR',{maximumFractionDigits:1});
+const CX_AP = (()=>{ const m=new Map(); for(const s of AP_SALES){ if(!s.d) continue; const o=m.get(s.d)||{n:0,v:0}; o.n++; o.v+=s.v; m.set(s.d,o); } return m; })();
+function cxEvents(){ const open=state.end>=DMAX;
+  return arr(DATAS.events).filter(e=>e.dateKey>=state.start && (open || e.dateKey<=state.end)).slice().sort((a,b)=>a.dateKey<b.dateKey?-1:1); }
+function bizDays(a,b){ let n=0; for(let d=addDays(parseD(a),1), e=parseD(b); d<=e; d=addDays(d,1)){ const w=d.getDay(); if(w>0 && w<6) n++; } return n; }   // dias úteis depois de a até b
+const CX_GLASS = '<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="cxGlass" viewBox="0 0 16 18"><path d="M1.2 1.2h13.6L8 9.6z"/><rect x="7.2" y="9.4" width="1.6" height="5.6" rx=".5"/><rect x="3.8" y="15" width="8.4" height="1.8" rx=".9"/></symbol></defs></svg>';
+const cxG = k => `<svg class="cx-g ${k}" viewBox="0 0 16 18" aria-hidden="true"><use href="#cxGlass"/></svg>`;
+
+// agregado de um intervalo (com vendedora: vendas/receita só dela)
+function cxAgg(a,b,seller){ const s=sumDaily(a,b), ap=apSold(a,b); let sales=s.sales, rev=s.revenue;
+  if(seller){ sales=0; rev=0; for(const r of arr(D.sellers)){ if(r.seller===seller && r.date>=a && r.date<=b){ sales+=r.sales; rev+=r.revenue; } } }
+  return {spend:s.spend,leads:s.leads,qlf:s.qlf,sales,rev,apn:ap.n,apv:ap.v,days:Math.max(1,dayspan(a,b))}; }
+// métricas (add = somável; den = denominador da razão -> "—" quando zero; sel = muda com a vendedora; noSel = sem sentido com vendedora)
+const CX_M = [
+  {k:'spend', l:'Investimento', f:m0, add:true, dir:0},
+  {k:'leads', l:'Leads', f:int, add:true, dir:1},
+  {k:'qlf', l:'Leads qualificadas', f:int, add:true, dir:1},
+  {k:'txq', l:'% qualificadas', f:pct, v:o=>safe(o.qlf,o.leads)*100, den:o=>o.leads, dir:1},
+  {k:'cpl', l:'CPL', f:m0, v:o=>safe(o.spend,o.leads), den:o=>o.leads, dir:-1},
+  {k:'cplq', l:'CPL qualificado', f:m0, v:o=>safe(o.spend,o.qlf), den:o=>o.qlf, dir:-1},
+  {k:'sales', l:'Vendas do Cocktail', f:int, add:true, dir:1, sel:true},
+  {k:'rev', l:'Receita do Cocktail', f:m0, add:true, dir:1, sel:true},
+  {k:'ticket', l:'Ticket médio', f:m0, v:o=>safe(o.rev,o.sales), den:o=>o.sales, dir:0, sel:true},
+  {k:'cac', l:'CAC (custo por venda)', f:m0, v:o=>safe(o.spend,o.sales), den:o=>o.sales, dir:-1, noSel:true},
+  {k:'roas', l:'ROAS do Cocktail', f:fmtRoas, v:o=>safe(o.rev,o.spend), den:o=>o.spend, dir:1, noSel:true},
+  {k:'l2v', l:'Lead → venda', f:pct, v:o=>safe(o.sales,o.leads)*100, den:o=>o.leads, dir:1, noSel:true},
+  {k:'q2v', l:'Qualificada → venda', f:pct, v:o=>safe(o.sales,o.qlf)*100, den:o=>o.qlf, dir:1, noSel:true},
+  {k:'apn', l:'Vendas do Ápice', f:int, add:true, dir:1, ap:true},
+  {k:'apv', l:'Receita do Ápice', f:m0, add:true, dir:1, ap:true},
+  {k:'roasap', l:'ROAS com Ápice', f:fmtRoas, v:o=>safe(o.rev+o.apv,o.spend), den:o=>o.spend, dir:1, noSel:true},
+];
+const cxM = k => CX_M.find(m=>m.k===k);
+const cxVal = (m,o) => m.v ? m.v(o) : o[m.k];
+const cxCrown = m => (m.ap||m.k==='roasap') ? '👑 ' : '';
+function cxFmt(m,o,seller){ if(seller && m.noSel) return '—'; if(m.den && !m.den(o)) return '—'; return m.f(cxVal(m,o)); }
+function cxPerDay(m,o,seller){ if(seller && m.noSel) return '—'; if(!m.add) return cxFmt(m,o,seller); const v=o[m.k]/o.days; return m.f===int ? n1(v) : m.f(v); }
+
+function renderConsolidado(){
+  renderCxHero(); renderCxComp(); renderCxLot(); renderCxFat(); renderCxSales(); renderCxFun(); renderCxDay();
+}
+
+// ---- topo: pessoas por Cocktail ----
+function renderCxHero(){
+  const el=document.getElementById('cxHero'); if(!el) return;
+  const evs=cxEvents(), meta=DATAS.meta||30;
+  let seats=0,conv=0,rev=0,apN=0,apV=0,donePaid=0,doneAp=0;
+  for(const e of evs){ const c=e.conv||0, a=CX_AP.get(e.dateKey)||{n:0,v:0};
+    seats+=e.vendas; conv+=c; rev+=e.revenue; apN+=a.n; apV+=a.v;
+    if(e.dateKey<CX_TODAY){ donePaid+=e.vendas-c; doneAp+=a.n; } }
+  const paid=seats-conv, cur=sumDaily(state.start,state.end);
+  const nextEv=evs.find(e=>e.dateKey>=CX_TODAY);
+  const range=evs.length ? `${evs.length} ${evs.length===1?'Cocktail':'Cocktails'} · ${cxDM(evs[0].dateKey)} → ${cxDM(evs[evs.length-1].dateKey)}${state.end>=DMAX&&nextEv?' · inclui os próximos':''}` : 'Nenhum Cocktail com data no período';
+  const cols=evs.map(e=>{ const c=e.conv||0, p=e.vendas-c, a=CX_AP.get(e.dateKey)||{n:0,v:0}, ak=Math.min(a.n,p);
+    const cells=[]; for(let i=0;i<p-ak;i++) cells.push('p'); for(let i=0;i<ak;i++) cells.push('a'); for(let i=0;i<c;i++) cells.push('c');
+    while(cells.length<meta) cells.push('e');
+    const st=e.dateKey<CX_TODAY?['realizado','']:(e.dateKey===CX_TODAY?['hoje','hoje']:['aberto','']);
+    const tip=`${e.ev}: ${e.vendas} de ${meta} vagas · ${p} pagas${c?` · ${c} convidada${c>1?'s':''}`:''} · Cocktail ${money(e.revenue)}${a.n?` · ${a.n} compraram o Ápice (${money(a.v)})`:''}`;
+    return `<div class="cx-ev${nextEv&&e.dateKey===nextEv.dateKey?' cx-next':''}" title="${esc(tip)}">
+      <div class="cx-ev-n">${int(e.vendas)}${a.n?`<span class="cx-ev-ap">👑+${int(a.n)}</span>`:''}</div>
+      <div class="cx-seats">${cells.map(cxG).join('')}</div>
+      <div class="cx-ev-rev">${moneyK(e.revenue)}</div>
+      <div class="cx-ev-dt">${cxDMes(e.dateKey)}</div>
+      <div class="cx-ev-st ${st[1]}">${st[0]}</div></div>`; }).join('');
+  el.innerHTML = CX_GLASS + `
+  <div class="cx-left">
+    <div class="cx-brand"><b>Cocktail</b> Cardi Nigro <span>+ Ápice</span></div>
+    <div class="cx-big">${int(seats)} <span>pessoas</span></div>
+    <div class="cx-lead"><b>${int(paid)}</b> vendas pagas e <b>${moneyK(rev+apV)}</b> em Cocktail + Ápice</div>
+    <div class="cx-when">${range}</div>
+    <div class="cx-rows">
+      <div class="cx-row"><div class="cx-ico">${cxG('p')}</div><div><div class="cx-name">Cocktail</div><div class="cx-sub">vendas pagas · ${moneyK(rev)}</div></div><div class="cx-num">${int(paid)}<small>pessoas</small></div></div>
+      <div class="cx-row"><div class="cx-ico">${cxG('c')}</div><div><div class="cx-name">Convidadas</div><div class="cx-sub">ocupam vaga, sem pagamento</div></div><div class="cx-num">${int(conv)}<small>pessoas</small></div></div>
+      <div class="cx-div"></div>
+      <div class="cx-row"><div class="cx-ico">${cxG('a')}</div><div><div class="cx-name">Upsell para o Ápice</div><div class="cx-sub">${moneyK(apV)} em vendas do Ápice</div></div><div class="cx-num">${int(apN)}<small>pessoas</small></div></div>
+    </div>
+    <div class="cx-foot"><b>${pct(safe(cur.sales,cur.leads)*100)}</b> dos ${int(cur.leads)} leads do período viraram venda${donePaid?`<br><b>${pct(safe(doneAp,donePaid)*100)}</b> das pagantes dos Cocktails já realizados compraram o Ápice`:''}</div>
+  </div>
+  <div class="cx-right">
+    <div class="cx-top">
+      <div class="cx-legend-h"><span>${cxG('p')} Vaga paga</span><span>${cxG('a')} Comprou o Ápice</span><span>${cxG('c')} Convidada</span><span>${cxG('e')} Vaga livre</span></div>
+      <div class="cx-upd">⏱ ${esc(D.generatedAtBR)} · atualiza a cada 3h</div>
+    </div>
+    <div class="cx-pict">${cols || '<div class="cx-empty">Nenhum Cocktail com data no período selecionado.</div>'}</div>
+  </div>`;
+}
+
+// ---- competência: últimos 7 dias do período + total ----
+function renderCxComp(){
+  const el=document.getElementById('cxComp'); if(!el) return;
+  const days=[]; for(let i=6;i>=0;i--){ const d=fmtD(addDays(parseD(state.end),-i)); if(d>=state.start) days.push(d); }
+  const cols=days.map(d=>({d,o:cxAgg(d,d)})), tot=cxAgg(state.start,state.end);
+  const ms=['spend','leads','qlf','cplq','sales','rev','roas','apn','roasap'].map(cxM);
+  el.innerHTML=`<thead><tr class="cx-band"><th></th><th colspan="${cols.length}">Últimos ${cols.length} dias do período</th><th colspan="2" class="cx-tot">Período</th></tr>
+    <tr><th>Métrica</th>${cols.map(c=>`<th class="${c.d===CX_TODAY?'cx-today':''}">${cxDM(c.d)}<small>${c.d===CX_TODAY?'hoje':WD[parseD(c.d).getDay()]}</small></th>`).join('')}
+    <th class="cx-tot">Total<small>${cxDM(state.start)} → ${cxDM(state.end)}</small></th><th class="cx-tot">Média/dia<small>${int(tot.days)} dias</small></th></tr></thead>
+    <tbody>${ms.map(m=>`<tr class="${m.ap?'cx-aprow':''}"><td>${cxCrown(m)}${m.l}</td>${cols.map(c=>`<td>${cxFmt(m,c.o)}</td>`).join('')}<td class="cx-tot">${cxFmt(m,tot)}</td><td class="cx-tot">${cxPerDay(m,tot)}</td></tr>`).join('')}</tbody>`;
+}
+
+// ---- lotação por evento ----
+function renderCxLot(){
+  const el=document.getElementById('cxLot'); if(!el) return;
+  const evs=cxEvents(), meta=DATAS.meta||30;
+  if(!evs.length){ el.innerHTML='<tbody><tr><td class="cx-empty">Nenhum Cocktail com data no período selecionado.</td></tr></tbody>'; return; }
+  const X=evs.map(e=>{ const c=e.conv||0, a=CX_AP.get(e.dateKey)||{n:0,v:0}, falta=Math.max(0,meta-e.vendas);
+    const st=e.dateKey<CX_TODAY?'done':(e.dateKey===CX_TODAY?'today':'open');
+    return {e,c,p:e.vendas-c,a,falta,st,bd:st==='open'?bizDays(CX_TODAY,e.dateKey):0}; });
+  const T=X.reduce((t,x)=>{ t.occ+=x.e.vendas; t.p+=x.p; t.c+=x.c; t.falta+=x.falta; t.rev+=x.e.revenue; if(x.st==='done'){ t.apn+=x.a.n; t.apv+=x.a.v; } return t; },{occ:0,p:0,c:0,falta:0,rev:0,apn:0,apv:0});
+  const cap=meta*X.length;
+  const chip=x=>x.st==='done'?'<span class="cx-chip ok">realizado</span>':(x.st==='today'?'<span class="cx-chip today">hoje</span>':'<span class="cx-chip open">aberto</span>');
+  const occ=(n,c)=>{ const p=safe(n,c)*100, col=p>=100?'var(--green)':(p>=66?'#e0913a':'var(--blue2)'); return `<div class="cx-occ"><span>${pct(p)}</span><i><b style="width:${Math.min(p,100).toFixed(1)}%;background:${col}"></b></i></div>`; };
+  const ritmo=x=>x.falta===0?'<span class="cx-ok">lotado ✅</span>':(x.st==='done'?'—':(x.st==='today'?`${int(x.falta)} hoje`:(x.bd>0?`${n1(x.falta/x.bd)}/dia`:'—')));
+  const row=(lbl,f,tot,cls)=>`<tr class="${cls||''}"><td>${lbl}</td>${X.map(x=>`<td>${f(x)}</td>`).join('')}<td class="cx-tot">${tot}</td></tr>`;
+  el.innerHTML=`<thead><tr class="cx-band"><th></th><th colspan="${X.length}">Cocktails no período</th><th class="cx-tot">Total</th></tr>
+    <tr><th>Evento</th>${X.map(x=>`<th class="${x.st==='today'?'cx-today':''}">${cxDM(x.e.dateKey)}<small>${WD[parseD(x.e.dateKey).getDay()]}</small></th>`).join('')}<th class="cx-tot">${X.length} ${X.length===1?'evento':'eventos'}</th></tr></thead><tbody>
+    ${row('Status',chip,'')}
+    ${row('Capacidade',()=>int(meta),int(cap))}
+    ${row('<b>Vagas ocupadas</b>',x=>`<b>${int(x.e.vendas)}</b>`,`<b>${int(T.occ)}</b>`)}
+    ${row('pagas',x=>int(x.p),int(T.p),'cx-subrow')}
+    ${row('convidadas',x=>x.c?int(x.c):'—',T.c?int(T.c):'—','cx-subrow')}
+    ${row('Ocupação',x=>occ(x.e.vendas,meta),occ(T.occ,cap))}
+    ${row('Faltam',x=>x.falta?int(x.falta):'<span class="cx-ok">0</span>',int(T.falta))}
+    ${row('Dias úteis até o evento',x=>x.st==='open'?int(x.bd):(x.st==='today'?'hoje':'—'),'')}
+    ${row('Ritmo para lotar <span class="sub">(vagas/dia útil)</span>',ritmo,'')}
+    ${row('Receita do Cocktail',x=>m0(x.e.revenue),m0(T.rev))}
+    ${row('👑 Upsell Ápice',x=>x.st==='done'?(x.a.n?`<b class="cx-gold">${int(x.a.n)}</b> · ${moneyK(x.a.v)}`:'0'):'—',T.apn?`<b class="cx-gold">${int(T.apn)}</b> · ${moneyK(T.apv)}`:'0','cx-aprow')}
+  </tbody>`;
+}
+
+// ---- perfil de faturamento das compradoras (pagas) por evento ----
+const CX_FAT=[['lt100','Abaixo de R$ 100 mil'],['f100','R$ 100 a 300 mil'],['f200old','Acima de R$ 200 mil','opção antiga do formulário'],['f300','R$ 300 a 500 mil'],['f500','R$ 500 mil a 1 milhão'],['f1m','R$ 1 milhão ou mais'],['none','Sem formulário','compradora sem resposta de faturamento']];
+function renderCxFat(){
+  const el=document.getElementById('cxFat'); if(!el) return;
+  const evs=cxEvents().filter(e=>e.fat && Object.keys(e.fat).length);
+  if(!evs.length){ el.innerHTML='<tbody><tr><td class="cx-empty">Sem compradoras com data de Cocktail no período.</td></tr></tbody>'; return; }
+  const n=(e,k)=>(e.fat&&e.fat[k])||0, tot=e=>CX_FAT.reduce((s,f)=>s+n(e,f[0]),0);
+  const rows=CX_FAT.filter(f=>evs.some(e=>n(e,f[0])>0));
+  const T={}; for(const f of rows) T[f[0]]=evs.reduce((s,e)=>s+n(e,f[0]),0); const TT=evs.reduce((s,e)=>s+tot(e),0);
+  const cell=(v,t,cls)=>{ if(!v) return `<td class="cx-heat ${cls||''}">—</td>`; const p=safe(v,t); return `<td class="cx-heat ${cls||''}" style="background:rgba(15,91,168,${(0.06+p*0.55).toFixed(3)});${p>=0.45?'color:#fff;':''}">${int(v)} <small>· ${Math.round(p*100)}%</small></td>`; };
+  el.innerHTML=`<thead><tr class="cx-band"><th></th><th colspan="${evs.length}">Compradoras por Cocktail</th><th class="cx-tot">Total</th></tr>
+    <tr><th>Faturamento mensal</th>${evs.map(e=>`<th>${cxDM(e.dateKey)}<small>${WD[parseD(e.dateKey).getDay()]}</small></th>`).join('')}<th class="cx-tot">${evs.length} ${evs.length===1?'evento':'eventos'}</th></tr></thead>
+    <tbody>${rows.map(f=>`<tr><td>${f[1]}${f[2]?`<small class="cx-note">${f[2]}</small>`:''}</td>${evs.map(e=>cell(n(e,f[0]),tot(e))).join('')}${cell(T[f[0]],TT,'cx-tot')}</tr>`).join('')}
+    <tr class="cx-sumrow"><td>Total de compradoras</td>${evs.map(e=>`<td>${int(tot(e))}</td>`).join('')}<td class="cx-tot">${int(TT)}</td></tr></tbody>`;
+}
+
+// ---- gráfico: vendas por dia (Cocktail + Ápice empilhado) ----
+function renderCxSales(){
+  const el=document.getElementById('cxSales'); if(!el) return;
+  const data=seriesDaily(state.start,state.end);
+  const W=Math.max(320,el.clientWidth||1000), H=230, pad={l:30,r:8,t:20,b:26}, iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
+  const rows=data.map(d=>({d:d.date,s:d.sales,r:d.revenue,a:(CX_AP.get(d.date)||{n:0,v:0})}));
+  const max=Math.max(1,...rows.map(x=>x.s+x.a.n)), n=rows.length, gw=iw/Math.max(n,1), bw=Math.max(2,Math.min(gw*0.66,28));
+  let g='', bars='', lab='', xl='', hz='';
+  for(let k=0;k<=2;k++){ const v=Math.round(max*k/2), y=pad.t+ih-v/max*ih; g+=`<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#eef2f6"/><text x="${pad.l-6}" y="${y+3}" font-size="10" text-anchor="end" fill="#7b8794">${v}</text>`; }
+  rows.forEach((x,i)=>{ const cx=pad.l+i*gw+gw/2, hs=x.s/max*ih, ha=x.a.n/max*ih, y0=pad.t+ih, gap=(hs>0&&ha>0)?2:0;
+    if(hs>0) bars+=`<rect x="${cx-bw/2}" y="${y0-hs}" width="${bw}" height="${hs}" rx="3" fill="var(--navy)"/>`;
+    if(ha>0) bars+=`<rect x="${cx-bw/2}" y="${y0-hs-ha-gap}" width="${bw}" height="${ha}" rx="3" fill="#e9b03b"/>`;
+    const t=x.s+x.a.n; if(t>0 && n<=62) lab+=`<text x="${cx}" y="${y0-hs-ha-gap-5}" font-size="10.5" font-weight="700" text-anchor="middle" fill="#41505e">${t}</text>`;
+    if(n<=16 || i%Math.ceil(n/14)===0) xl+=`<text x="${cx}" y="${H-8}" font-size="10" text-anchor="middle" fill="#7b8794">${cxDM(x.d)}</text>`;
+    hz+=`<rect class="hz" x="${pad.l+i*gw}" y="${pad.t}" width="${gw}" height="${ih}" fill="transparent" data-d="${x.d}" data-s="${x.s}" data-r="${x.r}" data-an="${x.a.n}" data-av="${x.a.v}"/>`; });
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${g}${bars}${lab}${xl}${hz}</svg>`;
+  attachTip('cxSales', ds=>`<div class="tt-d">${ds.d.split('-').reverse().join('/')} · ${WD[parseD(ds.d).getDay()]}</div>
+    <div class="tt-r"><span class="tdot" style="background:var(--navy)"></span>Vendas do Cocktail<b>${int(+ds.s)}</b></div>
+    <div class="tt-r"><span class="sub">receita ${money(+ds.r)}</span></div>
+    ${+ds.an?`<div class="tt-r"><span class="tdot" style="background:#e9b03b"></span>Vendas do Ápice<b>${int(+ds.an)}</b></div><div class="tt-r"><span class="sub">${money(+ds.av)}</span></div>`:''}`);
+}
+
+// ---- funil por dia/semana/mês (com vendedora) ----
+function cxBuckets(){
+  let end=state.end; if(!CX.withToday && end>=CX_TODAY) end=fmtD(addDays(parseD(CX_TODAY),-1));
+  const out=[]; if(end<state.start) return {b:out,end};
+  if(CX.view==='d'){ for(let i=0;i<CX.cols;i++){ const d=fmtD(addDays(parseD(end),-i)); if(d<state.start) break; out.unshift({a:d,b:d,lbl:cxDM(d),sub:d===CX_TODAY?'hoje':WD[parseD(d).getDay()]}); } }
+  else if(CX.view==='w'){ let e=parseD(end); for(let i=0;i<CX.cols;i++){ const s=addDays(e,-((e.getDay()+6)%7)); let a=fmtD(s); const b=fmtD(e); if(b<state.start) break; if(a<state.start) a=state.start; out.unshift({a,b,lbl:`${cxDM(a)}–${cxDM(b)}`,sub:`${dayspan(a,b)} dias`}); e=addDays(s,-1); } }
+  else { let e=parseD(end); for(let i=0;i<CX.cols;i++){ const s=new Date(e.getFullYear(),e.getMonth(),1); let a=fmtD(s); const b=fmtD(e); if(b<state.start) break; if(a<state.start) a=state.start; out.unshift({a,b,lbl:monthName(a,true),sub:`${dayspan(a,b)} dias`}); e=addDays(s,-1); } }
+  return {b:out,end};
+}
+function renderCxFun(){
+  const el=document.getElementById('cxFun'); if(!el) return;
+  const sel=document.getElementById('cxSeller');
+  if(sel && sel.options.length<=1){ const tot=new Map(); for(const r of arr(D.sellers)){ tot.set(r.seller,(tot.get(r.seller)||0)+r.sales); }
+    [...tot.entries()].sort((a,b)=>b[1]-a[1]).forEach(([s])=>{ const o=document.createElement('option'); o.value=s; o.textContent=pretty(s); sel.appendChild(o); }); }
+  const {b:B,end}=cxBuckets(), sl=CX.seller;
+  if(!B.length){ el.innerHTML='<tbody><tr><td class="cx-empty">Sem dias no período com esse filtro.</td></tr></tbody>'; document.getElementById('cxFunNote').innerHTML=''; return; }
+  const cols=B.map(x=>({...x,o:cxAgg(x.a,x.b,sl)})), tot=cxAgg(state.start,end,sl), last=cols[cols.length-1];
+  const unit=CX.view==='d'?'último dia':(CX.view==='w'?'última semana':'último mês');
+  const nc=cols.length, span=CX.view==='d'?(nc===1?'Último dia':`Últimos ${nc} dias`):(CX.view==='w'?(nc===1?'Última semana':`Últimas ${nc} semanas`):(nc===1?'Último mês':`Últimos ${nc} meses`));
+  const vs=m=>{ if(sl && m.noSel) return '—'; if(m.den && (!m.den(last.o) || !m.den(tot))) return '—';
+    const a=m.add?last.o[m.k]/last.o.days:cxVal(m,last.o), b=m.add?tot[m.k]/tot.days:cxVal(m,tot); if(!b) return '—';
+    const ch=(a-b)/b*100, cls=(Math.abs(ch)<0.5||m.dir===0)?'flat':((ch>0)===(m.dir>0)?'up':'down');
+    return `<span class="cx-vs ${cls}">${ch>0?'+':''}${Math.round(ch)}%</span>`; };
+  el.innerHTML=`<thead><tr class="cx-band"><th></th><th colspan="${cols.length}">${span}${sl?` · vendedora: ${esc(pretty(sl))}`:''}</th><th class="cx-vsh"></th><th colspan="2" class="cx-tot">Período</th></tr>
+    <tr><th>Métrica <small>clique p/ ver o gráfico</small></th>${cols.map(c=>`<th class="${c.b===CX_TODAY&&CX.view==='d'?'cx-today':''}">${c.lbl}<small>${c.sub}</small></th>`).join('')}
+    <th class="cx-vsh">vs. período<small>${unit}</small></th><th class="cx-tot">Total<small>${cxDM(state.start)} → ${cxDM(end)}</small></th><th class="cx-tot">Média/dia<small>${int(tot.days)} dias</small></th></tr></thead>
+    <tbody>${CX_M.map(m=>`<tr data-k="${m.k}" class="${CX.metric===m.k?'sel':''} ${m.ap?'cx-aprow':''}"><td>${cxCrown(m)}${m.l}</td>${cols.map(c=>`<td>${cxFmt(m,c.o,sl)}</td>`).join('')}<td class="cx-vsh">${vs(m)}</td><td class="cx-tot">${cxFmt(m,tot,sl)}</td><td class="cx-tot">${cxPerDay(m,tot,sl)}</td></tr>`).join('')}</tbody>`;
+  el.querySelectorAll('tbody tr').forEach(tr=>tr.onclick=()=>{ CX.metric=tr.dataset.k; el.querySelectorAll('tbody tr').forEach(x=>x.classList.toggle('sel',x===tr)); renderCxDay();
+    const c=document.getElementById('cxDayCard'); if(c && c.getBoundingClientRect().top>window.innerHeight-120) c.scrollIntoView({behavior:'smooth',block:'center'}); });
+  document.getElementById('cxFunNote').innerHTML = sl
+    ? `Com vendedora selecionada, só <b>vendas, receita e ticket</b> mudam — investimento, leads e Ápice continuam da conta toda; ROAS, CAC e conversões ficam "—".`
+    : `Clique numa linha para ver a métrica dia a dia no gráfico abaixo. "vs. período" compara o ${unit} com a média do período${CX.withToday?' (hoje ainda está rodando — desmarque "Com o dia de hoje" para comparar dias fechados)':''}.`;
+}
+
+// ---- gráfico: a métrica escolhida no funil, por dia (com quebra por campanha/conjunto/criativo) ----
+const CX_BRK_COL=['#0f5ba8','#4aa3e8','#e9a23b','#2e9e3f','#9b59b6','#b0bac4'];
+const CX_GRAIN_K={spend:'spend',leads:'leads',qlf:'qlf',sales:'sales',rev:'revenue'};
+function cxGroupLabel(r,brk){ if(brk==='camp'){ const p=String(r.campaign).split('|').map(s=>s.trim()).filter(Boolean); return pretty(p.length?p[p.length-1]:r.campaign); } return pretty(brk==='set'?r.adset:r.ad); }
+function renderCxDay(){
+  const el=document.getElementById('cxDay'); if(!el) return;
+  const m=cxM(CX.metric)||CX_M[0], sl=CX.seller, gk=CX_GRAIN_K[m.k];
+  const canBrk=!!gk && !(sl && m.sel), brk=canBrk?CX.brk:'none';
+  document.getElementById('cxDayTitle').innerHTML=`${cxCrown(m)}${m.l} por dia${sl&&m.sel?` <span class="sub">· ${esc(pretty(sl))}</span>`:''}`;
+  document.querySelectorAll('#cxBrk button').forEach(b=>{ b.disabled=!canBrk && b.dataset.b!=='none'; b.classList.toggle('on',b.dataset.b===brk); });
+  const days=seriesDaily(state.start,state.end).map(r=>r.date);
+  const W=Math.max(320,el.clientWidth||1000), H=250, pad={l:58,r:10,t:22,b:26}, iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
+  let series=[], groups=[];
+  if(brk==='none'){
+    series=days.map(d=>{ const o=cxAgg(d,d,sl); const blank=(sl&&m.noSel)||(m.den&&!m.den(o)); return {d,parts:[blank?0:cxVal(m,o)],blank}; });
+  } else {
+    const tot=new Map(), byDay=new Map();
+    for(const r of D.grain){ if(r.date<state.start||r.date>state.end) continue; const v=r[gk]||0; if(!v) continue;
+      const g=cxGroupLabel(r,brk); tot.set(g,(tot.get(g)||0)+v); let dm=byDay.get(r.date); if(!dm){ dm=new Map(); byDay.set(r.date,dm); } dm.set(g,(dm.get(g)||0)+v); }
+    const top=[...tot.entries()].sort((a,b)=>b[1]-a[1]).slice(0,5).map(x=>x[0]);
+    groups=top.concat(tot.size>top.length?['Outros']:[]);
+    series=days.map(d=>{ const dm=byDay.get(d)||new Map(); const parts=groups.map(()=>0);
+      for(const [g,v] of dm){ const i=top.indexOf(g); parts[i>=0?i:groups.length-1]+=v; } return {d,parts}; });
+  }
+  const totals=series.map(s=>s.parts.reduce((a,b)=>a+b,0)), max=Math.max(0,...totals)||1, n=series.length, gw=iw/Math.max(n,1), bw=Math.max(2,Math.min(gw*0.66,30));
+  const fmtAx=v=>m.f===m0?(v>=1000?`R$ ${n1(v/1000)}k`:`R$ ${int(v)}`):(m.f===pct?`${n1(v)}%`:(m.f===fmtRoas?`${n1(v)}x`:n1(v)));
+  let g=''; for(let k=0;k<=3;k++){ const v=max*k/3, y=pad.t+ih-v/max*ih; g+=`<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#eef2f6"/><text x="${pad.l-6}" y="${y+3}" font-size="10" text-anchor="end" fill="#7b8794">${fmtAx(v)}</text>`; }
+  const one=(m.ap||m.k==='roasap')?'#e9b03b':'var(--navy)';
+  let bars='', lab='', xl='', hz='';
+  series.forEach((s,i)=>{ const cx=pad.l+i*gw+gw/2; let y=pad.t+ih;
+    s.parts.forEach((v,j)=>{ if(v<=0) return; const h=v/max*ih; y-=h; bars+=`<rect x="${cx-bw/2}" y="${y}" width="${bw}" height="${Math.max(h-(j?1:0),0.5)}" rx="${groups.length?1.5:3}" fill="${groups.length?CX_BRK_COL[j]:one}"/>`; });
+    if(n<=24 && totals[i]>0) lab+=`<text x="${cx}" y="${y-5}" font-size="10" font-weight="700" text-anchor="middle" fill="#41505e">${fmtAx(totals[i])}</text>`;
+    if(n<=16 || i%Math.ceil(n/14)===0) xl+=`<text x="${cx}" y="${H-8}" font-size="10" text-anchor="middle" fill="#7b8794">${cxDM(s.d)}</text>`;
+    hz+=`<rect class="hz" x="${pad.l+i*gw}" y="${pad.t}" width="${gw}" height="${ih}" fill="transparent" data-i="${i}"/>`; });
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">${g}${bars}${lab}${xl}${hz}</svg>`;
+  attachTip('cxDay', ds=>{ const s=series[+ds.i], t=totals[+ds.i];
+    return `<div class="tt-d">${s.d.split('-').reverse().join('/')} · ${WD[parseD(s.d).getDay()]}</div>
+      <div class="tt-r"><span class="tdot" style="background:${groups.length?'#7b8794':one}"></span>${esc(m.l)}<b>${s.blank?'—':m.f(t)}</b></div>
+      ${groups.map((gname,j)=>s.parts[j]>0?`<div class="tt-r"><span class="tdot" style="background:${CX_BRK_COL[j]}"></span>${esc(gname.length>38?gname.slice(0,37)+'…':gname)}<b>${m.f(s.parts[j])}</b></div>`:'').join('')}`; });
+  document.getElementById('cxDayLegend').innerHTML = groups.length
+    ? groups.map((gname,j)=>`<span title="${esc(gname)}"><i style="background:${CX_BRK_COL[j]}"></i>${esc(gname.length>42?gname.slice(0,41)+'…':gname)}</span>`).join('')
+    : (canBrk?'':`<span class="sub">${gk?'Com vendedora selecionada não há quebra por campanha (a venda não tem anúncio da vendedora).':'A quebra por campanha, conjunto ou criativo vale para investimento, leads, qualificadas, vendas e receita.'}</span>`);
+}
+function cxRedrawCharts(){ const pg=document.getElementById('pageConsolidado'); if(pg && !pg.hidden){ try{ renderCxSales(); renderCxDay(); }catch(err){ console.error('Consolidado:',err); } } }
+
 // ===================== render all =====================
 function render(){
   document.getElementById('rangeLbl').textContent = `${state.start.split('-').reverse().join('/')} → ${state.end.split('-').reverse().join('/')} (${dayspan(state.start,state.end)} dias)`;
@@ -837,6 +1093,7 @@ function render(){
   const prevEnd=fmtD(addDays(parseD(state.start),-1));
   const prevStart=fmtD(addDays(parseD(prevEnd),-(len-1)));
   const prev=sumDaily(prevStart,prevEnd);
+  try{ renderConsolidado(); }catch(err){ console.error('Consolidado:',err); }   // aba nova nunca derruba as outras
   renderHealth(cur,prev);
   renderReceita(cur,prev);
   renderApCash();
@@ -1228,16 +1485,24 @@ function init(){
   document.getElementById('qualNote').textContent = 'Qualificado = '+D.qualification;
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
-  const PAGES=['funnel','sd','datas','obj','insights','comercial','bestads','tempo','perfil','apice','ascensao'];
-  const NOCTRL=['insights','datas']; // abas de base completa (sem seletor de período); obj, tempo, perfil, apice, comercial, bestads, sd e ascensao usam o seletor
+  const PAGES=['consolidado','funnel','sd','datas','obj','insights','comercial','bestads','tempo','perfil','apice','ascensao'];
+  const NOCTRL=['insights','datas']; // abas de base completa (sem seletor de período); consolidado, obj, tempo, perfil, apice, comercial, bestads, sd e ascensao usam o seletor
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
     const pg=b.dataset.page;
     PAGES.forEach(p=>{ const el=document.getElementById('page'+p.charAt(0).toUpperCase()+p.slice(1)); if(el) el.hidden = p!==pg; });
     document.querySelector('.controls').style.display = NOCTRL.includes(pg) ? 'none' : '';
     if(pg==='apice') renderApChart();   // o gráfico mede a largura real -> desenha quando a aba aparece
+    if(pg==='consolidado') cxRedrawCharts();
   });
-  let apRz=0; window.addEventListener('resize',()=>{ clearTimeout(apRz); apRz=setTimeout(()=>{ const pg=document.getElementById('pageApice'); if(pg && !pg.hidden) renderApChart(); },150); });
+  let apRz=0; window.addEventListener('resize',()=>{ clearTimeout(apRz); apRz=setTimeout(()=>{ const pg=document.getElementById('pageApice'); if(pg && !pg.hidden) renderApChart(); cxRedrawCharts(); },150); });
+  // Consolidado: controles do funil e do gráfico por dia
+  const cxRe=()=>{ renderCxFun(); renderCxDay(); };
+  document.getElementById('cxView').onchange=e=>{ CX.view=e.target.value; cxRe(); };
+  document.getElementById('cxCols').onchange=e=>{ CX.cols=Math.max(2,Math.min(14,parseInt(e.target.value,10)||7)); e.target.value=CX.cols; cxRe(); };
+  document.getElementById('cxSeller').onchange=e=>{ CX.seller=e.target.value; cxRe(); };
+  document.getElementById('cxToday').onchange=e=>{ CX.withToday=e.target.checked; cxRe(); };
+  document.querySelectorAll('#cxBrk button').forEach(b=>b.onclick=()=>{ if(b.disabled) return; CX.brk=b.dataset.b; renderCxDay(); });
   document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
     document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
     state.level=t.dataset.level; state.sort={key:'qlf',asc:false}; renderTable();
@@ -1249,7 +1514,8 @@ function init(){
   renderInsights();
   renderDatas();
   const hash=location.hash.toLowerCase();
-  if(hash.includes('insight')){ document.querySelector('.pagebtn[data-page="insights"]').click(); }
+  if(hash.includes('funil')||hash.includes('funnel')){ document.querySelector('.pagebtn[data-page="funnel"]').click(); }
+  else if(hash.includes('insight')){ document.querySelector('.pagebtn[data-page="insights"]').click(); }
   else if(hash.includes('obj')){ document.querySelector('.pagebtn[data-page="obj"]').click(); }
   else if(hash.includes('tempo')){ document.querySelector('.pagebtn[data-page="tempo"]').click(); }
   else if(hash.includes('perfil')||hash.includes('compradora')){ document.querySelector('.pagebtn[data-page="perfil"]').click(); }
