@@ -395,7 +395,8 @@ function renderTable(){
 // ---- otimização por criativo (aba Funil): cada anúncio somado em todas as campanhas do período ----
 // Ranking por vendas / CPL QLF / verba / ROAS, pódios, mapa (vendas × CPL QLF, bolha = verba) e tabela com diagnóstico.
 // Diagnóstico usa o CPL QLF médio da CONTA no período (verba total ÷ qualificadas totais) como régua.
-const CR = { sort:'sales', camp:'', min:300 };
+const CR = { sort:'sales', camp:'', min:300, open:new Set() };   // open = criativos abertos (quebra por campanha)
+let CR_ROWS = [];
 const CR_SKIP = new Set(['SEM_UTM','NAO_ATRIBUIDO','xxxxx','']);
 const CR_MINQ = 3;   // ranking de CPL QLF só vale com pelo menos 3 qualificadas
 const crSeg = c => { const p=String(c).split('|').map(s=>s.trim()).filter(Boolean); return p.length?p[p.length-1]:String(c); };
@@ -415,8 +416,9 @@ function crData(){
     if(CR_SKIP.has(r.ad) || r.campaign==='NAO_ATRIBUIDO' || r.campaign==='SEM_UTM'){ unS+=r.sales; unR+=r.revenue; continue; }
     camps.set(r.campaign,(camps.get(r.campaign)||0)+r.spend);
     if(CR.camp && r.campaign!==CR.camp) continue;
-    let o=map.get(r.ad); if(!o){ o={ad:r.ad,m:nodeM(),camps:new Map()}; map.set(r.ad,o); }
+    let o=map.get(r.ad); if(!o){ o={ad:r.ad,m:nodeM(),camps:new Map(),by:new Map()}; map.set(r.ad,o); }
     addM(o.m,r); o.camps.set(r.campaign,(o.camps.get(r.campaign)||0)+r.spend);
+    let bc=o.by.get(r.campaign); if(!bc){ bc=nodeM(); o.by.set(r.campaign,bc); } addM(bc,r);   // mesmo criativo, campanha a campanha
   }
   const avg=safe(all.spend,all.qlf);
   const list=[...map.values()].filter(o=>o.m.spend>=CR.min || o.m.sales>0).map(o=>{ const m=o.m;
@@ -425,7 +427,8 @@ function crData(){
     let dg; if(m.sales>0 && m.spend<Math.max(CR.min,1)) dg='old';   // só aparece pela venda: verba abaixo do mínimo no período
     else if(m.sales>0) dg=(cplq!=null && cplq<=avg)?'champ':'pricey';
     else dg=(cplq!=null && cplq<=avg)?'cheap':'review';
-    return {ad:o.ad,m,cs,cplq,roas,cac:safe(m.spend,m.sales),txq:safe(m.qlf,m.leads)*100,dg}; });
+    const by=[...o.by.entries()].sort((a,b)=>b[1].spend-a[1].spend || b[1].sales-a[1].sales);
+    return {ad:o.ad,m,cs,by,cplq,roas,cac:safe(m.spend,m.sales),txq:safe(m.qlf,m.leads)*100,dg}; });
   return {list,avg,unS,unR,camps};
 }
 function crSort(list){
@@ -445,7 +448,7 @@ function crPill(v,qlf,avg){
 function crCampChips(cs){
   if(!cs.length) return '';
   const more=cs.length-1, rest=cs.slice(1).map(crCampLabel).join(' · ');
-  return `<span class="cr-chip" title="${esc(pretty(cs[0]))}">${esc(crCampLabel(cs[0]))}</span>${more?`<span class="cr-chip cr-more" title="${esc(rest)}">+${more} ${more===1?'campanha':'campanhas'}</span>`:''}`;
+  return `<span class="cr-chip" title="${esc(pretty(cs[0]))}">${esc(crCampLabel(cs[0]))}</span>${more?`<span class="cr-chip cr-more" title="${esc(rest)} · clique para ver por campanha">+${more} ${more===1?'campanha':'campanhas'} ▾</span>`:''}`;
 }
 function renderCreatives(){
   const card=document.getElementById('crCard'); if(!card) return;
@@ -465,7 +468,7 @@ function renderCreatives(){
   if(topCpl.length<3){ qMin=CR_MINQ; topCpl=list.filter(x=>x.m.qlf>=qMin && x.m.spend>0).sort((a,b)=>a.cplq-b.cplq).slice(0,3); }
   const pod=(title,sub,items,big,small,cls)=>`<div class="cr-pod ${cls}">
       <div class="cr-pod-h"><b>${title}</b><span>${sub}</span></div>
-      ${items.length?items.map((x,i)=>`<div class="cr-pod-row" title="${esc(pretty(x.ad))}">
+      ${items.length?items.map((x,i)=>`<div class="cr-pod-row" title="${esc(pretty(x.ad))} · clique para ver por campanha" data-ad="${esc(x.ad)}">
         <span class="cr-medal">${med[i]}</span>
         <div class="cr-pod-name"><div>${esc(pretty(x.ad))}</div><div class="cr-pod-camps">${crCampChips(x.cs)}</div></div>
         <div class="cr-pod-num"><b>${big(x)}</b><span>${small(x)}</span></div></div>`).join('')
@@ -529,11 +532,29 @@ function renderCreatives(){
   const sortCol={sales:'Vendas',cplq:'CPL QLF',spend:'Verba',roas:'ROAS'}[CR.sort];
   const th=(l,k)=>`<th class="${l===sortCol?'sorted':''}"${k?` data-s="${k}"`:''}>${l}</th>`;
   document.querySelector('#crTable thead').innerHTML=`<tr><th class="cr-rk">#</th><th class="cr-name">Criativo · campanha</th>${th('Verba','spend')}${th('Leads')}${th('Qualificadas')}${th('% Qualif')}${th('CPL QLF','cplq')}${th('Vendas','sales')}${th('Receita')}${th('ROAS','roas')}${th('CAC')}<th class="cr-dg">Diagnóstico</th></tr>`;
+  CR_ROWS=rows;
+  // linha por campanha (quando o criativo está aberto): mesmas colunas, mesma régua de CPL QLF
+  const subRows=x=>{ const tot=x.m.spend;
+    return `<tr class="cr-subhead"><td></td><td colspan="11">📂 <b>${x.by.length} ${x.by.length===1?'campanha':'campanhas'}</b> em que este criativo rodou no período · ordenadas por verba</td></tr>` +
+      x.by.map(([camp,m])=>{ const cq=m.qlf>0?m.spend/m.qlf:null;
+        return `<tr class="cr-sub">
+          <td></td>
+          <td class="cr-name"><div class="cr-subcamp"><span class="cr-chip">${esc(crCampLabel(camp))}</span></div><div class="cr-full" title="${esc(pretty(camp))}">${esc(pretty(camp))}</div></td>
+          <td>${money(m.spend)}</td>
+          <td>${int(m.leads)}</td>
+          <td>${int(m.qlf)}</td>
+          <td>${m.leads>0?pct(safe(m.qlf,m.leads)*100):'—'}</td>
+          <td>${crPill(cq,m.qlf,avg)}</td>
+          <td><b>${int(m.sales)}</b></td>
+          <td>${money(m.revenue)}</td>
+          <td>${m.spend>0?fmtRoas(safe(m.revenue,m.spend)):'—'}</td>
+          <td>${m.sales>0&&m.spend>0?money(safe(m.spend,m.sales)):'—'}</td>
+          <td class="cr-dg"><span class="cr-share">${tot>0?`${pct(safe(m.spend,tot)*100)} da verba`:'sem verba no período'}</span></td></tr>`; }).join(''); };
   document.querySelector('#crTable tbody').innerHTML = rows.length ? rows.map((x,i)=>{ const m=x.m, dg=CR_DIAG[x.dg];
-    const few = CR.sort==='cplq' && m.qlf>0 && m.qlf<CR_MINQ;
-    return `<tr class="${i<3?'cr-top':''}">
+    const few = CR.sort==='cplq' && m.qlf>0 && m.qlf<CR_MINQ, isOpen=CR.open.has(x.ad);
+    return `<tr class="cr-row${i<3?' cr-top':''}${isOpen?' cr-open':''}" data-i="${i}" title="Clique para ${isOpen?'fechar':'ver'} a quebra por campanha">
       <td class="cr-rk">${i<3?med[i]:i+1}</td>
-      <td class="cr-name"><div class="cr-ad">${esc(pretty(x.ad))}</div><div class="cr-camps">${crCampChips(x.cs)}</div></td>
+      <td class="cr-name"><div class="cr-ad"><span class="caret">${isOpen?'▾':'▸'}</span>${esc(pretty(x.ad))}</div><div class="cr-camps">${crCampChips(x.cs)}</div></td>
       <td>${money(m.spend)}</td>
       <td>${int(m.leads)}</td>
       <td>${int(m.qlf)}</td>
@@ -543,9 +564,15 @@ function renderCreatives(){
       <td>${money(m.revenue)}</td>
       <td>${m.spend>0?fmtRoas(x.roas):'—'}</td>
       <td>${m.sales>0&&m.spend>0?money(x.cac):'—'}</td>
-      <td class="cr-dg"><span class="cr-tag" style="color:${dg.c};border-color:${dg.c}" title="${esc(dg.d)}">${dg.l}</span></td></tr>`; }).join('')
+      <td class="cr-dg"><span class="cr-tag" style="color:${dg.c};border-color:${dg.c}" title="${esc(dg.d)}">${dg.l}</span></td></tr>` + (isOpen?subRows(x):''); }).join('')
     : '<tr><td colspan="12" class="cr-empty">Nenhum criativo com esse filtro no período.</td></tr>';
   document.querySelectorAll('#crTable thead th[data-s]').forEach(t=>t.onclick=()=>{ CR.sort=t.dataset.s; renderCreatives(); });
+  document.querySelectorAll('#crTable tbody tr.cr-row').forEach(tr=>tr.onclick=()=>{ const x=CR_ROWS[+tr.dataset.i]; if(!x) return;
+    if(CR.open.has(x.ad)) CR.open.delete(x.ad); else CR.open.add(x.ad); renderCreatives(); });
+  // pódio: clicar abre o criativo na tabela já com a quebra por campanha
+  document.querySelectorAll('#crPodiums .cr-pod-row').forEach(el=>el.onclick=()=>{ const ad=el.dataset.ad; CR.open.add(ad); renderCreatives();
+    const i=CR_ROWS.findIndex(x=>x.ad===ad), tr=document.querySelector(`#crTable tbody tr.cr-row[data-i="${i}"]`);
+    if(tr){ const sc=tr.closest('.table-scroll'); if(sc) sc.scrollTop=tr.offsetTop-40; tr.closest('.cr-card').querySelector('.cr-scroll').scrollIntoView({behavior:'smooth',block:'nearest'}); } });
   document.getElementById('crNote').innerHTML =
     `${int(rows.length)} criativos${CR.camp?` na campanha <b>${esc(crCampLabel(CR.camp))}</b>`:''} · CPL QLF médio da conta no período: <b>${money(avg)}</b> (verde = 20% abaixo da média ou mais, vermelho = 20% acima)` +
     (unS?` · <b>${int(unS)} ${unS===1?'venda':'vendas'}</b> (${money(unR)}) do período não têm criativo identificado e ficam fora desta visão`:'') +
