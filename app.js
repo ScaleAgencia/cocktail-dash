@@ -1171,10 +1171,11 @@ function evCard(e,meta,cac,today){
   if(full){ badge='✅ Lotado'; bcol='var(--green)'; }
   else if(past){ badge=`Encerrado · ${int(e.vendas)}/${meta}`; bcol='var(--muted)'; }
   else { badge=`faltam ${int(falta)}`; bcol='#d9822b'; }
-  const inv=e.vendas*cac;
+  const conv=e.conv||0, inv=(e.vendas-conv)*cac;   // convidada ocupa vaga mas nao custou trafego nem pagou
+  const convNote=conv?`<div class="ev-conv">inclui ${int(conv)} convidada${conv>1?'s':''} (sem pagamento)</div>`:'';
   return `<div class="ev-card${full?' ev-full':''}">
     <div class="ev-top"><span class="ev-name">${esc(e.ev)}</span><span class="ev-badge" style="color:${bcol};border-color:${bcol}">${badge}</span></div>
-    <div class="ev-count"><b>${int(e.vendas)}</b><span> / ${meta} vagas</span></div>
+    <div class="ev-count"><b>${int(e.vendas)}</b><span> / ${meta} vagas</span></div>${convNote}
     <div class="ev-prog"><div class="ev-fill" style="width:${Math.min(pctF,100).toFixed(1)}%;background:${col}"></div></div>
     <div class="ev-foot"><div class="ev-kv"><span class="ev-k">Investido em tráfego</span><span class="ev-v">~${money(inv)}</span></div><div class="ev-kv ev-kv-r"><span class="ev-k">Faturou em Cocktail</span><span class="ev-v" style="color:var(--green)">${money(e.revenue)}</span></div></div>
   </div>`;
@@ -1186,7 +1187,7 @@ function renderDatas(){
   const cac=salesAll>0?spendAll/salesAll:0;
   const totVagas=evs.length*meta, totVendas=evs.reduce((s,e)=>s+e.vendas,0), lot=evs.filter(e=>e.vendas>=meta).length;
   document.getElementById('datasIntro').innerHTML =
-    `Vendas do Cocktail agrupadas pela data do evento (coluna &ldquo;Oferta&rdquo; da planilha). Cada evento precisa de <b>${meta} vagas</b> preenchidas. Atualiza a cada 3h.`;
+    `Vagas de cada Cocktail pela data do evento (coluna G da planilha do comercial). Convidadas ocupam vaga, mas não contam como venda paga. Cada evento precisa de <b>${meta} vagas</b> preenchidas. Atualiza a cada 3h.`;
   document.getElementById('datasStats').innerHTML =
     statCard(int(evs.length),'Eventos (datas)') +
     statCard(`${int(totVendas)}<span class="statc-u"> / ${int(totVagas)}</span>`,'Vagas preenchidas', pct(totVagas?totVendas/totVagas*100:0)+' do total') +

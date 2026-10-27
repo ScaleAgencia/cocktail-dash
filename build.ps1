@@ -59,6 +59,11 @@ function Get-Sheet($id,$gid,$out){
   Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing -TimeoutSec 120
   if((Get-Item $out).Length -lt 50){ throw "Download too small: $out" }
 }
+# export CSV: traz o texto como aparece na celula (a gviz zera texto em coluna tipada como numero/data)
+function Get-SheetExport($id,$gid,$out){
+  Invoke-WebRequest -Uri "https://docs.google.com/spreadsheets/d/$id/export?format=csv&gid=$gid" -OutFile $out -UseBasicParsing -TimeoutSec 120
+  if((Get-Item $out).Length -lt 50){ throw "Download too small: $out" }
+}
 
 Add-Type -AssemblyName Microsoft.VisualBasic
 function Read-Csv($path){
@@ -254,21 +259,29 @@ foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}; $e=(Norm $r[$K_
 $manualByEmail=[ordered]@{}; $manEvByEmail=[ordered]@{}   # manEvByEmail = col G (DATA COCKTAIL) por pessoa, AUTORITATIVO p/ a aba Datas (inclui kiwify remanejadas)
 foreach($vg in $VENDAS_GIDS){
   $vc=Join-Path $dataDir "venda_$vg.csv"
-  try{ Get-Sheet $VENDAS_ID $vg $vc }catch{ continue }
+  try{ Get-SheetExport $VENDAS_ID $vg $vc }catch{ continue }   # export (NAO gviz): gviz apaga o texto "CONVIDADA" da col F (coluna de valor)
   if(-not (Test-Path $vc)){ continue }
   $vv=Read-Csv $vc; if($vv.Count -lt 1){ continue }
   $tabEv=''; if($VENDAS_EVDATE.ContainsKey($vg)){ $tabEv=$VENDAS_EVDATE[$vg] }
   foreach($row in $vv){
     $e=''; $nome=''; for($ci=0;$ci -lt $row.Count;$ci++){ $c=(Norm $row[$ci]).ToLower(); if($c -match '@'){ $e=($c -split '[;,\s]')[0]; if($ci -gt 0){ $nome=Norm $row[$ci-1] }; break } }
-    if($e -notmatch '@'){ continue }
-    $val=0.0; foreach($cell in $row){ $c=((Norm $cell) -replace '[R$\s]',''); if($c -match $reMoney){ $val=[double]($c -replace '\.','' -replace ',','.'); break } }
-    if($val -le 0){ continue }                       # sem VALOR = ainda nao e venda
+    # CONVIDADA (pedido do cliente 27/10/2026): comercial escreve "CONVIDADA" na col F (VALOR) ou na forma de
+    # pagamento. Ocupa VAGA (aba Datas) mas NAO e venda paga -> fora do funil/ROAS/faturamento.
+    $isGuest=$false; foreach($cell in $row){ if((Deaccent (Norm $cell)) -match '^convidad[ao]s?$'){ $isGuest=$true; break } }
+    if($e -notmatch '@'){   # sem e-mail: so entra se for convidada (ex.: "convidada 1" reservando a vaga); chave = aba + nome
+      $nome=''; foreach($cell in $row){ $c=Norm $cell; if($c -match '[A-Za-z]' -and (Deaccent $c) -notmatch '^convidad[ao]s?$'){ $nome=$c; break } }
+      if((Deaccent $nome) -match '^convidad'){ $isGuest=$true }
+      if(-not $isGuest -or $nome -eq ''){ continue }
+      $e='sem-email:'+$vg+':'+(NameKey $nome) }
+    $val=0.0; if(-not $isGuest){ foreach($cell in $row){ $c=((Norm $cell) -replace '[R$\s]',''); if($c -match $reMoney){ $val=[double]($c -replace '\.','' -replace ',','.'); break } } }
+    if(-not $isGuest -and $val -le 0){ continue }    # sem VALOR = ainda nao e venda
     if($vendaExclE.ContainsKey($e)){ continue }        # cancelado (vermelho/aba cancelado) por e-mail
     $nmc=NameKey $nome; if($nmc -match ' ' -and $vendaExclN.ContainsKey($nmc)){ continue }   # ...ou por nome
     $evk=''; $sel=''; for($ci=0;$ci -lt $row.Count;$ci++){ $c=Norm $row[$ci]; if($c -match $reEvDate){ $evk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); if($ci+1 -lt $row.Count){ $sel=Norm $row[$ci+1] }; break } }
     if($evk -eq ''){ $evk=$tabEv }                   # fallback: data do evento da propria aba
     elseif($evDiscovered -and $tabEv -ne '' -and -not $evTabDates.ContainsKey($evk)){ $evk=$tabEv }   # col G com data que NAO tem aba (typo, ex. 08/04 na aba 7 Abril; data da compra no lugar do evento) -> evento da propria aba
-    $manEvByEmail[$e]=[pscustomobject]@{ev=$evk;val=$val}   # col G p/ Datas — ULTIMA aba vence (reschedule mais recente)
+    $manEvByEmail[$e]=[pscustomobject]@{ev=$evk;val=$val;guest=$isGuest}   # col G p/ Datas — ULTIMA aba vence (reschedule mais recente)
+    if($isGuest){ continue }                         # convidada: so a vaga, nunca venda
     if($kiwPaidEmails.ContainsKey($e)){ continue }   # FUNIL: so nao-kiwify por e-mail
     $nk=NameKey $nome; if($nk -match ' ' -and $kiwNames.ContainsKey($nk)){ continue }   # ...E nao-kiwify por NOME (mesma pessoa c/ e-mail digitado diferente/typo) -> nao duplica a venda no funil/ROAS
     $dtk=''; foreach($cell in $row){ $c=Norm $cell; if($c -match $reBuyDate){ $dtk=('2026-{0:d2}-{1:d2}' -f [int]$Matches[2],[int]$Matches[1]); break } }
@@ -810,13 +823,13 @@ if($Mode -eq 'all' -or $Mode -eq 'datas'){
   # espelha o controle delas — NÃO adiciona vendas que só estão na kiwify (essas contam no funil/ROAS,
   # mas só viram "vaga" quando o comercial lançar). Evita divergência com a contagem do time.
   $personEv=[ordered]@{}
-  foreach($e in $manEvByEmail.Keys){ $m=$manEvByEmail[$e]; if($m.ev -eq ''){continue}; $personEv[$e]=[pscustomobject]@{dk=$m.ev;rev=$m.val} }
+  foreach($e in $manEvByEmail.Keys){ $m=$manEvByEmail[$e]; if($m.ev -eq ''){continue}; $personEv[$e]=[pscustomobject]@{dk=$m.ev;rev=$m.val;guest=[bool]$m.guest} }
   $evMap=@{}
   foreach($e in $personEv.Keys){ $p=$personEv[$e]; $dk=$p.dk
-    if(-not $evMap.ContainsKey($dk)){ $lbl="Evento $dk"; try{ $lbl='Evento '+([datetime]::ParseExact($dk,'yyyy-MM-dd',$null)).ToString('dd/MM') }catch{}; $evMap[$dk]=[pscustomobject]@{ev=$lbl;dateKey=$dk;vendas=0;revenue=0.0} }
-    $o=$evMap[$dk]; $o.vendas++; $o.revenue += $p.rev }
+    if(-not $evMap.ContainsKey($dk)){ $lbl="Evento $dk"; try{ $lbl='Evento '+([datetime]::ParseExact($dk,'yyyy-MM-dd',$null)).ToString('dd/MM') }catch{}; $evMap[$dk]=[pscustomobject]@{ev=$lbl;dateKey=$dk;vendas=0;conv=0;revenue=0.0} }
+    $o=$evMap[$dk]; $o.vendas++; if($p.guest){ $o.conv++ }; $o.revenue += $p.rev }   # vendas = VAGAS ocupadas (inclui convidadas, que entram com R$ 0)
   $evArr=@()
-  foreach($e in $evMap.Values){ $evArr+=[pscustomobject]@{ev=$e.ev;dateKey=$e.dateKey;vendas=$e.vendas;revenue=[math]::Round($e.revenue,2)} }
+  foreach($e in $evMap.Values){ $evArr+=[pscustomobject]@{ev=$e.ev;dateKey=$e.dateKey;vendas=$e.vendas;conv=$e.conv;revenue=[math]::Round($e.revenue,2)} }
   $evArr=@($evArr | Sort-Object dateKey)
   $datas=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; meta=30; today=$dmax; events=$evArr }
   WriteJs 'data-datas.js' 'DASH_DATAS' $datas
