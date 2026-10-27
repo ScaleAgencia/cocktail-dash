@@ -392,6 +392,166 @@ function renderTable(){
   document.querySelectorAll('#optTable .trow[data-k="1"]').forEach(tr=>tr.onclick=()=>{ const k=tr.dataset.key; if(expanded.has(k)) expanded.delete(k); else expanded.add(k); renderTable(); });
 }
 
+// ---- otimização por criativo (aba Funil): cada anúncio somado em todas as campanhas do período ----
+// Ranking por vendas / CPL QLF / verba / ROAS, pódios, mapa (vendas × CPL QLF, bolha = verba) e tabela com diagnóstico.
+// Diagnóstico usa o CPL QLF médio da CONTA no período (verba total ÷ qualificadas totais) como régua.
+const CR = { sort:'sales', camp:'', min:300 };
+const CR_SKIP = new Set(['SEM_UTM','NAO_ATRIBUIDO','xxxxx','']);
+const CR_MINQ = 3;   // ranking de CPL QLF só vale com pelo menos 3 qualificadas
+const crSeg = c => { const p=String(c).split('|').map(s=>s.trim()).filter(Boolean); return p.length?p[p.length-1]:String(c); };
+const crCampLabel = c => { const dt=(String(c).match(/(\d{2})\/(\d{2})\/\d{4}/)||[]); return pretty(crSeg(c))+(dt[1]?` · ${dt[1]}/${dt[2]}`:''); };
+const crShort = s => { const t=pretty(s).replace(/^AD_?/i,'').replace(/_/g,' ').replace(/\s+/g,' ').trim(); return t.length>26?t.slice(0,25)+'…':t; };
+const CR_DIAG = {
+  champ:{l:'⭐ Campeão', c:'var(--green)', d:'vende e o CPL QLF está abaixo da média'},
+  pricey:{l:'💰 Vende, mas caro', c:'#d9822b', d:'traz venda, mas a qualificada sai acima da média'},
+  cheap:{l:'🧪 Barato, sem venda', c:'var(--blue2)', d:'qualificada barata, ainda sem venda no período'},
+  review:{l:'✂️ Revisar', c:'var(--red)', d:'caro e sem venda no período'},
+  old:{l:'🕰️ Leads antigos', c:'#7b8794', d:'vendas de leads de antes do período; pouca ou nenhuma verba agora'}
+};
+function crData(){
+  const map=new Map(), camps=new Map(); let all={spend:0,qlf:0}, unS=0, unR=0;
+  for(const r of D.grain){ if(r.date<state.start||r.date>state.end) continue;
+    all.spend+=r.spend; all.qlf+=r.qlf;
+    if(CR_SKIP.has(r.ad) || r.campaign==='NAO_ATRIBUIDO' || r.campaign==='SEM_UTM'){ unS+=r.sales; unR+=r.revenue; continue; }
+    camps.set(r.campaign,(camps.get(r.campaign)||0)+r.spend);
+    if(CR.camp && r.campaign!==CR.camp) continue;
+    let o=map.get(r.ad); if(!o){ o={ad:r.ad,m:nodeM(),camps:new Map()}; map.set(r.ad,o); }
+    addM(o.m,r); o.camps.set(r.campaign,(o.camps.get(r.campaign)||0)+r.spend);
+  }
+  const avg=safe(all.spend,all.qlf);
+  const list=[...map.values()].filter(o=>o.m.spend>=CR.min || o.m.sales>0).map(o=>{ const m=o.m;
+    const cs=[...o.camps.entries()].sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+    const cplq=m.qlf>0?m.spend/m.qlf:null, roas=safe(m.revenue,m.spend);
+    let dg; if(m.sales>0 && m.spend<Math.max(CR.min,1)) dg='old';   // só aparece pela venda: verba abaixo do mínimo no período
+    else if(m.sales>0) dg=(cplq!=null && cplq<=avg)?'champ':'pricey';
+    else dg=(cplq!=null && cplq<=avg)?'cheap':'review';
+    return {ad:o.ad,m,cs,cplq,roas,cac:safe(m.spend,m.sales),txq:safe(m.qlf,m.leads)*100,dg}; });
+  return {list,avg,unS,unR,camps};
+}
+function crSort(list){
+  const by={
+    sales:(a,b)=>b.m.sales-a.m.sales || b.m.revenue-a.m.revenue || (a.cplq??1e9)-(b.cplq??1e9),
+    cplq:(a,b)=>{ const ra=a.m.qlf>=CR_MINQ?0:(a.m.qlf>0?1:2), rb=b.m.qlf>=CR_MINQ?0:(b.m.qlf>0?1:2); return ra-rb || (a.cplq??1e9)-(b.cplq??1e9) || b.m.sales-a.m.sales; },
+    spend:(a,b)=>b.m.spend-a.m.spend,
+    roas:(a,b)=>(a.dg==='old')-(b.dg==='old') || (b.m.spend>0)-(a.m.spend>0) || b.roas-a.roas || b.m.sales-a.m.sales   // ROAS de verba quase zero não lidera
+  };
+  return list.slice().sort(by[CR.sort]||by.sales);
+}
+function crPill(v,qlf,avg){
+  if(!qlf || v==null) return '<span class="pill" style="background:#aab4bf">—</span>';
+  const col = v<=avg*0.8?'var(--green)':(v<=avg*1.2?'var(--yellow)':'var(--red)');
+  return `<span class="pill" style="background:${col}">${money(v)}</span>`;
+}
+function crCampChips(cs){
+  if(!cs.length) return '';
+  const more=cs.length-1, rest=cs.slice(1).map(crCampLabel).join(' · ');
+  return `<span class="cr-chip" title="${esc(pretty(cs[0]))}">${esc(crCampLabel(cs[0]))}</span>${more?`<span class="cr-chip cr-more" title="${esc(rest)}">+${more} ${more===1?'campanha':'campanhas'}</span>`:''}`;
+}
+function renderCreatives(){
+  const card=document.getElementById('crCard'); if(!card) return;
+  const sel=document.getElementById('crCamp');
+  const {list,avg,unS,unR,camps}=crData();
+  // campanhas com verba no período (mantém a escolhida mesmo se sumir do período)
+  const opts=[...camps.entries()].filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([c])=>c);
+  if(CR.camp && !opts.includes(CR.camp)) opts.unshift(CR.camp);
+  sel.innerHTML='<option value="">Todas</option>'+opts.map(c=>`<option value="${esc(c)}"${c===CR.camp?' selected':''}>${esc(crCampLabel(c))}</option>`).join('');
+  document.querySelectorAll('#crSort button').forEach(b=>b.classList.toggle('on',b.dataset.s===CR.sort));
+  const rows=crSort(list);
+
+  // ---- pódios ----
+  const med=['🥇','🥈','🥉'];
+  const topSales=list.filter(x=>x.m.sales>0).sort((a,b)=>b.m.sales-a.m.sales||b.m.revenue-a.m.revenue).slice(0,3);
+  let qMin=5, topCpl=list.filter(x=>x.m.qlf>=qMin && x.m.spend>0).sort((a,b)=>a.cplq-b.cplq).slice(0,3);
+  if(topCpl.length<3){ qMin=CR_MINQ; topCpl=list.filter(x=>x.m.qlf>=qMin && x.m.spend>0).sort((a,b)=>a.cplq-b.cplq).slice(0,3); }
+  const pod=(title,sub,items,big,small,cls)=>`<div class="cr-pod ${cls}">
+      <div class="cr-pod-h"><b>${title}</b><span>${sub}</span></div>
+      ${items.length?items.map((x,i)=>`<div class="cr-pod-row" title="${esc(pretty(x.ad))}">
+        <span class="cr-medal">${med[i]}</span>
+        <div class="cr-pod-name"><div>${esc(pretty(x.ad))}</div><div class="cr-pod-camps">${crCampChips(x.cs)}</div></div>
+        <div class="cr-pod-num"><b>${big(x)}</b><span>${small(x)}</span></div></div>`).join('')
+        : '<div class="cr-empty">Nenhum criativo nesse critério no período.</div>'}
+    </div>`;
+  document.getElementById('crPodiums').innerHTML =
+    pod('🏆 Mais vendas','compradoras que vieram do anúncio',topSales,x=>`${int(x.m.sales)} ${x.m.sales===1?'venda':'vendas'}`,x=>`${money(x.m.revenue)} · CPL QLF ${x.cplq!=null?money(x.cplq):'—'}`,'p-sales') +
+    pod('💎 Menor CPL qualificado',`com pelo menos ${qMin} qualificadas · média da conta ${money(avg)}`,topCpl,x=>money(x.cplq),x=>`${int(x.m.qlf)} qualificadas · ${int(x.m.sales)} ${x.m.sales===1?'venda':'vendas'}`,'p-cpl');
+
+  // ---- mapa: x = CPL QLF (escala log), y = vendas, bolha = verba ----
+  const box=document.getElementById('crMap');
+  const pts=list.filter(x=>x.cplq!=null && x.m.spend>0);
+  if(!pts.length){ box.innerHTML='<div class="cr-empty">Sem criativos com qualificadas e verba no período.</div>'; }
+  else{
+    const W=Math.max(340,box.clientWidth||900), H=320, pad={l:46,r:18,t:22,b:40}, iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
+    const xs=pts.map(x=>x.cplq).concat([avg]).filter(v=>v>0);
+    const lx0=Math.log(Math.min(...xs)*0.8), lx1=Math.log(Math.max(...xs)*1.25);
+    const X=v=>pad.l+(Math.log(v)-lx0)/(lx1-lx0||1)*iw;
+    const yb=pad.t+ih-22, yt=pad.t+20;   // faixas de cima/baixo reservadas p/ os rótulos dos quadrantes
+    const ymax=Math.max(1,...pts.map(x=>x.m.sales)), Y=v=>yb-(v+0.5)/(ymax+1)*(yb-yt);
+    const smax=Math.max(...pts.map(x=>x.m.spend)), R=v=>5+17*Math.sqrt(v/smax);
+    let g='';
+    for(const t of [10,25,50,100,200,400,800,1600,3200,6400]){ const lt=Math.log(t); if(lt<lx0||lt>lx1) continue; const x=X(t);
+      g+=`<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t+ih}" stroke="#eef2f6"/><text x="${x}" y="${H-22}" font-size="10" text-anchor="middle" fill="#7b8794">R$ ${int(t)}</text>`; }
+    const ystep=Math.max(1,Math.ceil(ymax/5));
+    for(let v=0;v<=ymax;v+=ystep){ const y=Y(v); g+=`<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#eef2f6"/><text x="${pad.l-8}" y="${y+3}" font-size="10" text-anchor="end" fill="#7b8794">${v}</text>`; }
+    const ax=X(avg), ySplit=Y(0.5);
+    const quad=`<rect x="${pad.l}" y="${pad.t}" width="${Math.max(0,ax-pad.l)}" height="${Math.max(0,ySplit-pad.t)}" fill="rgba(46,158,63,.07)"/>
+      <rect x="${ax}" y="${pad.t}" width="${Math.max(0,pad.l+iw-ax)}" height="${Math.max(0,ySplit-pad.t)}" fill="rgba(217,130,43,.07)"/>
+      <rect x="${pad.l}" y="${ySplit}" width="${Math.max(0,ax-pad.l)}" height="${Math.max(0,pad.t+ih-ySplit)}" fill="rgba(47,127,209,.06)"/>
+      <rect x="${ax}" y="${ySplit}" width="${Math.max(0,pad.l+iw-ax)}" height="${Math.max(0,pad.t+ih-ySplit)}" fill="rgba(224,72,58,.06)"/>
+      <line x1="${ax}" y1="${pad.t}" x2="${ax}" y2="${pad.t+ih}" stroke="#41505e" stroke-dasharray="4 4" stroke-width="1.2"/>
+      <line x1="${pad.l}" y1="${ySplit}" x2="${pad.l+iw}" y2="${ySplit}" stroke="#c9d3dd" stroke-dasharray="2 4"/>
+      <text x="${pad.l+8}" y="${pad.t+14}" font-size="11" font-weight="800" fill="#2e9e3f">⭐ Campeões · escalar</text>
+      <text x="${pad.l+iw-8}" y="${pad.t+14}" font-size="11" font-weight="800" fill="#c06d1f" text-anchor="end">💰 Vendem, mas caros · otimizar</text>
+      <text x="${pad.l+8}" y="${pad.t+ih-8}" font-size="11" font-weight="800" fill="#2f7fd1">🧪 Baratos, sem venda · dar tempo</text>
+      <text x="${pad.l+iw-8}" y="${pad.t+ih-8}" font-size="11" font-weight="800" fill="#d4544a" text-anchor="end">✂️ Caros e sem venda · revisar</text>
+      <text x="${ax}" y="${pad.t-7}" font-size="10" font-weight="700" fill="#41505e" text-anchor="middle">média ${money(avg)}</text>
+      <text x="${pad.l+iw/2}" y="${H-6}" font-size="10.5" text-anchor="middle" fill="#41505e" font-weight="700">CPL qualificado (escala log) → mais caro</text>
+      <text x="12" y="${pad.t+ih/2}" font-size="10.5" fill="#41505e" font-weight="700" transform="rotate(-90 12 ${pad.t+ih/2})" text-anchor="middle">vendas</text>`;
+    const ord=pts.slice().sort((a,b)=>b.m.spend-a.m.spend);   // grandes atrás, pequenas na frente
+    const labelSet=new Set(pts.slice().sort((a,b)=>b.m.sales-a.m.sales||b.m.spend-a.m.spend).slice(0,6).map(x=>x.ad));
+    let dots='', labs='';
+    ord.forEach(x=>{ const cx=X(x.cplq), cy=Y(x.m.sales), r=R(x.m.spend), col=CR_DIAG[x.dg].c, i=pts.indexOf(x);
+      dots+=`<circle class="hz cr-dot" cx="${cx}" cy="${cy}" r="${r}" fill="${col}" fill-opacity=".55" stroke="${col}" stroke-width="1.5" data-i="${i}"/>`;
+      if(labelSet.has(x.ad)){ const right=cx<pad.l+iw*0.7; labs+=`<text x="${right?cx+r+4:cx-r-4}" y="${cy+3.5}" font-size="10.5" font-weight="700" fill="#1f2933" text-anchor="${right?'start':'end'}" paint-order="stroke" stroke="#fff" stroke-width="3">${esc(crShort(x.ad))}</text>`; } });
+    box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Mapa dos criativos: vendas por CPL qualificado">${g}${quad}${dots}${labs}</svg>`;
+    attachTip('crMap', ds=>{ const x=pts[+ds.i], dg=CR_DIAG[x.dg];
+      return `<div class="tt-d">${esc(pretty(x.ad))}</div>
+        <div class="tt-r"><span class="sub">${esc(x.cs.map(crCampLabel).join(' · '))}</span></div>
+        <div class="tt-r">Verba<b>${money(x.m.spend)}</b></div>
+        <div class="tt-r">Qualificadas<b>${int(x.m.qlf)}</b></div>
+        <div class="tt-r">CPL qualificado<b>${money(x.cplq)}</b></div>
+        <div class="tt-r">Vendas<b>${int(x.m.sales)}</b></div>
+        <div class="tt-r">ROAS<b>${fmtRoas(x.roas)}</b></div>
+        <div class="tt-r"><span class="tdot" style="background:${dg.c}"></span>${dg.l}</div>`; });
+  }
+
+  // ---- tabela ----
+  const maxS=Math.max(1,...rows.map(x=>x.m.sales));
+  const sortCol={sales:'Vendas',cplq:'CPL QLF',spend:'Verba',roas:'ROAS'}[CR.sort];
+  const th=(l,k)=>`<th class="${l===sortCol?'sorted':''}"${k?` data-s="${k}"`:''}>${l}</th>`;
+  document.querySelector('#crTable thead').innerHTML=`<tr><th class="cr-rk">#</th><th class="cr-name">Criativo · campanha</th>${th('Verba','spend')}${th('Leads')}${th('Qualificadas')}${th('% Qualif')}${th('CPL QLF','cplq')}${th('Vendas','sales')}${th('Receita')}${th('ROAS','roas')}${th('CAC')}<th class="cr-dg">Diagnóstico</th></tr>`;
+  document.querySelector('#crTable tbody').innerHTML = rows.length ? rows.map((x,i)=>{ const m=x.m, dg=CR_DIAG[x.dg];
+    const few = CR.sort==='cplq' && m.qlf>0 && m.qlf<CR_MINQ;
+    return `<tr class="${i<3?'cr-top':''}">
+      <td class="cr-rk">${i<3?med[i]:i+1}</td>
+      <td class="cr-name"><div class="cr-ad">${esc(pretty(x.ad))}</div><div class="cr-camps">${crCampChips(x.cs)}</div></td>
+      <td>${money(m.spend)}</td>
+      <td>${int(m.leads)}</td>
+      <td>${int(m.qlf)}</td>
+      <td>${m.leads>0?pct(x.txq):'—'}</td>
+      <td>${crPill(x.cplq,m.qlf,avg)}${few?'<div class="cr-few">poucos dados</div>':''}</td>
+      <td class="cr-sales"><div class="cr-sbar"><i style="width:${(m.sales/maxS*60).toFixed(1)}px"></i><b>${int(m.sales)}</b></div></td>
+      <td>${money(m.revenue)}</td>
+      <td>${m.spend>0?fmtRoas(x.roas):'—'}</td>
+      <td>${m.sales>0&&m.spend>0?money(x.cac):'—'}</td>
+      <td class="cr-dg"><span class="cr-tag" style="color:${dg.c};border-color:${dg.c}" title="${esc(dg.d)}">${dg.l}</span></td></tr>`; }).join('')
+    : '<tr><td colspan="12" class="cr-empty">Nenhum criativo com esse filtro no período.</td></tr>';
+  document.querySelectorAll('#crTable thead th[data-s]').forEach(t=>t.onclick=()=>{ CR.sort=t.dataset.s; renderCreatives(); });
+  document.getElementById('crNote').innerHTML =
+    `${int(rows.length)} criativos${CR.camp?` na campanha <b>${esc(crCampLabel(CR.camp))}</b>`:''} · CPL QLF médio da conta no período: <b>${money(avg)}</b> (verde = 20% abaixo da média ou mais, vermelho = 20% acima)` +
+    (unS?` · <b>${int(unS)} ${unS===1?'venda':'vendas'}</b> (${money(unR)}) do período não têm criativo identificado e ficam fora desta visão`:'') +
+    ` · criativos com verba abaixo do mínimo só aparecem se tiverem venda.`;
+}
+
 // ---- sales by campaign ----
 function renderSales(){
   const map=new Map();
@@ -1100,6 +1260,7 @@ function render(){
   renderInvest(cur);
   renderFunnel(cur,prev);
   renderTable();
+  try{ renderCreatives(); }catch(err){ console.error('Criativos:',err); }
   renderDaily();
   renderSales();
   renderComercial();
@@ -1494,8 +1655,13 @@ function init(){
     document.querySelector('.controls').style.display = NOCTRL.includes(pg) ? 'none' : '';
     if(pg==='apice') renderApChart();   // o gráfico mede a largura real -> desenha quando a aba aparece
     if(pg==='consolidado') cxRedrawCharts();
+    if(pg==='funnel') renderCreatives();   // o mapa dos criativos mede a largura real
   });
-  let apRz=0; window.addEventListener('resize',()=>{ clearTimeout(apRz); apRz=setTimeout(()=>{ const pg=document.getElementById('pageApice'); if(pg && !pg.hidden) renderApChart(); cxRedrawCharts(); },150); });
+  let apRz=0; window.addEventListener('resize',()=>{ clearTimeout(apRz); apRz=setTimeout(()=>{ const pg=document.getElementById('pageApice'); if(pg && !pg.hidden) renderApChart(); cxRedrawCharts(); const pf=document.getElementById('pageFunnel'); if(pf && !pf.hidden) renderCreatives(); },150); });
+  // Otimização por criativo: ordenação, campanha e gasto mínimo
+  document.querySelectorAll('#crSort button').forEach(b=>b.onclick=()=>{ CR.sort=b.dataset.s; renderCreatives(); });
+  document.getElementById('crCamp').onchange=e=>{ CR.camp=e.target.value; renderCreatives(); };
+  document.getElementById('crMin').onchange=e=>{ CR.min=+e.target.value||0; renderCreatives(); };
   // Consolidado: controles do funil e do gráfico por dia
   const cxRe=()=>{ renderCxFun(); renderCxDay(); };
   document.getElementById('cxView').onchange=e=>{ CX.view=e.target.value; cxRe(); };

@@ -172,6 +172,29 @@
       <div class="table-scroll"><table id="optTable"><thead></thead><tbody></tbody></table></div>
     </div>
 
+    <div class="card cr-card" id="crCard">
+      <div class="cr-head">
+        <div>
+          <div class="chart-title">🎬 Otimização por criativo</div>
+          <div class="cr-sub">Cada criativo somado em todas as campanhas em que rodou no período · os chips mostram de qual campanha ele é</div>
+        </div>
+        <div class="cr-ctrl">
+          <div class="cr-seg" id="crSort" role="group" aria-label="Ordenar criativos">
+            <button data-s="sales" class="on">🏆 Mais vendas</button><button data-s="cplq">💎 Menor CPL QLF</button><button data-s="spend">💸 Mais verba</button><button data-s="roas">📈 Maior ROAS</button>
+          </div>
+          <label>Campanha <select id="crCamp"><option value="">Todas</option></select></label>
+          <label>Gasto mínimo <select id="crMin"><option value="0">R$ 0</option><option value="300" selected>R$ 300</option><option value="1000">R$ 1.000</option><option value="3000">R$ 3.000</option></select></label>
+        </div>
+      </div>
+      <div class="cr-podiums" id="crPodiums"></div>
+      <div class="cr-map-box">
+        <div class="cr-map-h"><b>Mapa dos criativos</b><span>vendas × CPL qualificado · tamanho da bolha = verba · linha tracejada = CPL QLF médio da conta</span></div>
+        <div id="crMap" class="cr-map"></div>
+      </div>
+      <div class="table-scroll cr-scroll"><table id="crTable"><thead></thead><tbody></tbody></table></div>
+      <div class="micro-note cr-note" id="crNote"></div>
+    </div>
+
     <div class="card">
       <div class="chart-title">Vendas por campanha (cruzando comprador × lead)</div>
       <div class="table-scroll"><table id="salesTable"><thead></thead><tbody></tbody></table></div>
