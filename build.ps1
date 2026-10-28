@@ -23,7 +23,8 @@ $dataDir = Join-Path $root 'data'
 New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 # ---- Sources -------------------------------------------------------
-$QUERIES_ID = '1S_5PYUzmHPfMY9kRxwf89cWXw0dHoN708OMnlLZnpWs'; $QUERIES_GID = '1160142252'
+# Queries do Meta: planilha NOVA desde 28/10/2026 (a 1S_5PYUz... ficou vazia). Mesma aba/gid e mesmas colunas, historico desde 06/01.
+$QUERIES_ID = '1tmPnZIkieT98eiTma7WtTv68jCH8xIp6cWa0oFu0Q2I'; $QUERIES_GID = '1160142252'
 $MASTER_ID  = '1WuETdVje43yvMfyQDHO1PObXj_G9G-t6JjG6q987Z4o'
 $LEADS_GID  = '603619749'
 $KIWIFY_GID = '1987730935'
