@@ -520,7 +520,9 @@ $delta7=0.0; if($cplp7 -gt 0){ $delta7=[math]::Round(($cpl7-$cplp7)/$cplp7*100,1
 $tnCP='info'; if($cur7.qlf -ge 15 -and $delta7 -ge 8){ $tnCP='warn' } elseif($delta7 -le -8){ $tnCP='good' }
 AddIns @{type='funnel_cplqlf';cat='funil';tone=$tnCP;cplqlf=$cplq;cpl7=$cpl7;cplp7=$cplp7;delta7=$delta7}
 if($cur.sales -gt 0){ AddIns @{type='funnel_cac';cat='funil';tone='info';cac=[math]::Round((Sdiv $cur.spend $cur.sales),2);ticket=[math]::Round((Sdiv $cur.revenue $cur.sales),2)} }
-$convlp=[math]::Round((Sdiv $cur.leads $cur.lpv)*100,1)
+# conversao de pagina = leads DA PAGINA / page views: tira os leads do Forms (formulario nativo do Meta, nao passa pela pagina)
+$formsLe30=0; foreach($g in $grain.Values){ if($g.date -ge $w30s -and $g.date -le $dmax -and (IsFormsCamp $g.campaign)){ $formsLe30+=$g.leads } }
+$convlp=[math]::Round((Sdiv ($cur.leads-$formsLe30) $cur.lpv)*100,1)
 $tnLP = if($convlp -ge 8){'good'}else{'warn'}
 AddIns @{type='funnel_convlp';cat='funil';tone=$tnLP;convlp=$convlp}
 

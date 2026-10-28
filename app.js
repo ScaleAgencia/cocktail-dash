@@ -43,16 +43,20 @@ const DMIN = D.dateMin, DMAX = D.dateMax;
 let state = { start:null, end:null, level:'campaign', sort:{key:'qlf',asc:false} };
 
 // ---- aggregation ----
+// Leads do Forms (campanha com a tag "forms" = formulário nativo do Meta) não passam pela página:
+// a conversão de página usa só os leads da página (leads − leads do Forms) ÷ page views.
+const isFormsCamp = c => String(c).split('|').some(s=>s.trim().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()==='forms');
+const FORMS_LD = new Map(); for(const r of D.grain){ if(r.leads && isFormsCamp(r.campaign)) FORMS_LD.set(r.date,(FORMS_LD.get(r.date)||0)+r.leads); }
 function sumDaily(start,end){
-  const o={spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0};
-  for(const r of D.daily){ if(r.date>=start && r.date<=end){ for(const k in o) o[k]+=r[k]||0; } }
+  const o={spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,fleads:0};
+  for(const r of D.daily){ if(r.date>=start && r.date<=end){ for(const k in o) o[k]+=r[k]||0; o.fleads+=FORMS_LD.get(r.date)||0; } }
   return o;
 }
 function metrics(a){
   return {
     spend:a.spend, impr:a.impr, clicks:a.clicks, lpv:a.lpv, leads:a.leads, qlf:a.qlf, sales:a.sales, revenue:a.revenue,
     cpm:safe(a.spend,a.impr)*1000, cpc:safe(a.spend,a.clicks), ctr:safe(a.clicks,a.impr)*100,
-    cpv:safe(a.spend,a.lpv), cr:safe(a.lpv,a.clicks)*100, convlp:safe(a.leads,a.lpv)*100,
+    cpv:safe(a.spend,a.lpv), cr:safe(a.lpv,a.clicks)*100, convlp:safe(a.leads-(a.fleads||0),a.lpv)*100,
     cpl:safe(a.spend,a.leads), txqual:safe(a.qlf,a.leads)*100,
     cplqlf:safe(a.spend,a.qlf), txvenda:safe(a.sales,a.qlf)*100,
     cac:safe(a.spend,a.sales), roas:safe(a.revenue,a.spend), ticket:safe(a.revenue,a.sales)
@@ -332,8 +336,9 @@ function renderInvest(cur){
 
 // ---- optimization table ----
 const expanded = new Set();
-function nodeM(){ return {spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0}; }
-function addM(o,r){ o.spend+=r.spend;o.impr+=r.impr;o.clicks+=r.clicks;o.lpv+=r.lpv;o.leads+=r.leads;o.qlf+=r.qlf;o.sales+=r.sales;o.revenue+=r.revenue; }
+function nodeM(){ return {spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,fleads:0}; }
+function addM(o,r){ o.spend+=r.spend;o.impr+=r.impr;o.clicks+=r.clicks;o.lpv+=r.lpv;o.leads+=r.leads;o.qlf+=r.qlf;o.sales+=r.sales;o.revenue+=r.revenue;
+  if(r.leads && isFormsCamp(r.campaign)) o.fleads+=r.leads; }
 function buildTree(start,end){
   const camps=new Map();
   for(const r of D.grain){ if(r.date<start||r.date>end) continue;
@@ -349,7 +354,8 @@ function buildTree(start,end){
 function treeRow(node,level,hasKids){
   const m=node.m;
   const cpm=safe(m.spend,m.impr)*1000, ctr=safe(m.clicks,m.impr)*100, cpc=safe(m.spend,m.clicks);
-  const connect=safe(m.lpv,m.clicks)*100, convlp=safe(m.leads,m.lpv)*100, cpl=safe(m.spend,m.leads);
+  const pageLeads=m.leads-m.fleads, connect=safe(m.lpv,m.clicks)*100, convlp=safe(pageLeads,m.lpv)*100, cpl=safe(m.spend,m.leads);
+  const showConv = m.lpv>0 && !(m.fleads>0 && pageLeads<=0);   // campanha só de Forms não tem conversão de página
   const txq=safe(m.qlf,m.leads)*100, cplqlf=safe(m.spend,m.qlf), txv=safe(m.sales,m.qlf)*100;
   const cac=safe(m.spend,m.sales), roas=safe(m.revenue,m.spend), ticket=safe(m.revenue,m.sales);
   const car = hasKids ? `<span class="caret">${expanded.has(node.key)?'▾':'▸'}</span>` : '<span class="caret0"></span>';
@@ -363,7 +369,7 @@ function treeRow(node,level,hasKids){
     <td>${m.clicks>0?money(cpc):'—'}</td>
     <td>${m.clicks>0?pct(connect):'—'}</td>
     <td>${int(m.lpv)}</td>
-    <td>${m.lpv>0?pct(convlp):'—'}</td>
+    <td>${showConv?pct(convlp):'—'}</td>
     <td>${int(m.leads)}</td>
     <td>${m.leads>0?money(cpl):'—'}</td>
     <td>${m.leads>0?pct(txq):'—'}</td>
@@ -1495,24 +1501,33 @@ function heat(v,min,max,mode){
   a=(0.08+0.5*t).toFixed(2); return `background:rgba(${r},${g},${b},${a})`;
 }
 function renderDaily(){
+  // ordem pedida pelo cliente (28/10): Investimento, CPM, CPC, Connect Rate, Conversão de página, Leads, CPL, QLF, CPL QLF, % QLF
+  // (+ Vendas e CTR no fim). Connect = LPV ÷ cliques; Conversão de página = leads ÷ LPV (padrão da agência p/ Meta).
   const rows=seriesDaily(state.start,state.end).slice().reverse().map(d=>({   // mais recente primeiro
-    date:d.date, spend:d.spend, leads:d.leads, qlf:d.qlf, txq:safe(d.qlf,d.leads)*100,
-    cplqlf:safe(d.spend,d.qlf), sales:d.sales, cpm:safe(d.spend,d.impr)*1000, ctr:safe(d.clicks,d.impr)*100 }));
-  const mm=k=>{ const a=rows.map(r=>r[k]); return [Math.min(...a),Math.max(...a)]; };
-  const sp=mm('spend'),le=mm('leads'),q=mm('qlf'),tx=mm('txq'),sa=mm('sales'),cpm=mm('cpm'),ctr=mm('ctr');
+    date:d.date, spend:d.spend, leads:d.leads, qlf:d.qlf, sales:d.sales, impr:d.impr, clicks:d.clicks, lpv:d.lpv,
+    cpm:safe(d.spend,d.impr)*1000, cpc:safe(d.spend,d.clicks), connect:safe(d.lpv,d.clicks)*100, convlp:safe(d.leads-(FORMS_LD.get(d.date)||0),d.lpv)*100,
+    cpl:safe(d.spend,d.leads), cplqlf:safe(d.spend,d.qlf), txq:safe(d.qlf,d.leads)*100, ctr:safe(d.clicks,d.impr)*100 }));
+  const mm=(k,ok)=>{ const a=rows.filter(r=>!ok||ok(r)).map(r=>r[k]); return a.length?[Math.min(...a),Math.max(...a)]:[0,0]; };
+  const sp=mm('spend'),cpm=mm('cpm',r=>r.impr>0),cpc=mm('cpc',r=>r.clicks>0),con=mm('connect',r=>r.clicks>0),clp=mm('convlp',r=>r.lpv>0),
+    le=mm('leads'),cpl=mm('cpl',r=>r.leads>0),q=mm('qlf'),tx=mm('txq',r=>r.leads>0),sa=mm('sales'),ctr=mm('ctr',r=>r.impr>0);
+  const cell=(ok,v,rng,mode,fmt)=>ok?`<td style="${heat(v,rng[0],rng[1],mode)}">${fmt(v)}</td>`:'<td>—</td>';
   document.querySelector('#dailyTable thead').innerHTML=
-    '<tr><th>Dia</th><th>Gasto</th><th>Leads</th><th>QLF</th><th>%Qualif</th><th>CPL QLF</th><th>Vendas</th><th>CPM</th><th>CTR</th></tr>';
+    '<tr><th>Dia</th><th>Investimento</th><th>CPM</th><th>CPC</th><th>Connect Rate</th><th>Conv. de página</th><th>Leads</th><th>CPL</th><th>QLF</th><th>CPL QLF</th><th>% QLF</th><th>Vendas</th><th>CTR</th></tr>';
   document.querySelector('#dailyTable tbody').innerHTML = rows.length ? rows.map(r=>`<tr>
     <td>${r.date.slice(8,10)}/${r.date.slice(5,7)}</td>
     <td style="${heat(r.spend,sp[0],sp[1],'vol')}">${money(r.spend)}</td>
+    ${cell(r.impr>0,r.cpm,cpm,'cost',money)}
+    ${cell(r.clicks>0,r.cpc,cpc,'cost',money)}
+    ${cell(r.clicks>0,r.connect,con,'good',pct)}
+    ${cell(r.lpv>0,r.convlp,clp,'good',pct)}
     <td style="${heat(r.leads,le[0],le[1],'vol')}">${int(r.leads)}</td>
+    ${cell(r.leads>0,r.cpl,cpl,'cost',money)}
     <td style="${heat(r.qlf,q[0],q[1],'vol')}">${int(r.qlf)}</td>
-    <td style="${heat(r.txq,tx[0],tx[1],'good')}">${pct(r.txq)}</td>
     <td>${cplPill(r.cplqlf,r.qlf)}</td>
+    ${cell(r.leads>0,r.txq,tx,'good',pct)}
     <td style="${heat(r.sales,sa[0],sa[1],'vol')}">${int(r.sales)}</td>
-    <td style="${heat(r.cpm,cpm[0],cpm[1],'cost')}">${money(r.cpm)}</td>
-    <td style="${heat(r.ctr,ctr[0],ctr[1],'good')}">${pct(r.ctr)}</td></tr>`).join('')
-    : '<tr><td colspan="9" class="sub">Sem dados no período.</td></tr>';
+    ${cell(r.impr>0,r.ctr,ctr,'good',pct)}</tr>`).join('')
+    : '<tr><td colspan="13" class="sub">Sem dados no período.</td></tr>';
 }
 
 // ===================== estudo das compradoras (3 abas) =====================
