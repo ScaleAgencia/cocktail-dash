@@ -172,27 +172,23 @@
       <div class="table-scroll"><table id="optTable"><thead></thead><tbody></tbody></table></div>
     </div>
 
-    <div class="card cr-card" id="crCard">
-      <div class="cr-head">
-        <div>
-          <div class="chart-title">🎬 Otimização por criativo</div>
-          <div class="cr-sub">Cada criativo somado em todas as campanhas em que rodou no período · os chips mostram de qual campanha ele é</div>
-        </div>
-        <div class="cr-ctrl">
-          <div class="cr-seg" id="crSort" role="group" aria-label="Ordenar criativos">
-            <button data-s="sales" class="on">🏆 Mais vendas</button><button data-s="cplq">💎 Menor CPL QLF</button><button data-s="spend">💸 Mais verba</button><button data-s="roas">📈 Maior ROAS</button>
+    <div class="card ov-wrap" id="ovWrap">
+      <div class="ov-top">
+        <div class="ov-head">
+          <div>
+            <div class="chart-title">⚡ Otimização V2 — Campanha · Conjunto · Anúncio</div>
+            <div class="ov-sub">Clique numa linha (ou na legenda do gráfico) para filtrar tudo só para ela · clique de novo para limpar · as tabelas continuam completas para trocar direto</div>
           </div>
-          <label>Campanha <select id="crCamp"><option value="">Todas</option></select></label>
-          <label>Gasto mínimo <select id="crMin"><option value="0">R$ 0</option><option value="300" selected>R$ 300</option><option value="1000">R$ 1.000</option><option value="3000">R$ 3.000</option></select></label>
+          <div class="ov-ctrl"><span class="ov-lab">Linhas:</span>
+            <div class="ov-seg" id="ovMetric" role="group" aria-label="Métrica das linhas"><button data-m="cplq" class="on">Custo MQL</button><button data-m="cpl">CPL</button><button data-m="qlf">MQL</button><button data-m="leads">Leads</button><button data-m="sales">Vendas</button><button data-m="spend">Investimento</button></div>
+          </div>
         </div>
+        <div class="ov-crumbbar"><span class="ov-lab">Filtro ativo:</span><span id="ovCrumb"></span><button class="ov-clear" id="ovClear" hidden>✕ limpar filtro</button></div>
+        <div class="ov-kpis" id="ovKpis"></div>
       </div>
-      <div class="cr-podiums" id="crPodiums"></div>
-      <div class="cr-map-box">
-        <div class="cr-map-h"><b>Mapa dos criativos</b><span>vendas × CPL qualificado · tamanho da bolha = verba · linha tracejada = CPL QLF médio da conta</span></div>
-        <div id="crMap" class="cr-map"></div>
-      </div>
-      <div class="table-scroll cr-scroll"><table id="crTable"><thead></thead><tbody></tbody></table></div>
-      <div class="micro-note cr-note" id="crNote"></div>
+      <div class="ov-level"><div id="ovTCamp"></div><div class="ov-chart"><div class="ov-ch-h"><b>Evolução diária · por campanha</b><span>top 8 por verba · com campanha selecionada, só a linha dela · passe o mouse para ver o dia</span></div><div id="ovLCamp" class="ov-lines"></div></div></div>
+      <div class="ov-level"><div id="ovTAdset"></div><div class="ov-chart"><div class="ov-ch-h"><b>Evolução diária · por conjunto</b><span>top 8 por verba · com conjunto selecionado, só a linha dele</span></div><div id="ovLAdset" class="ov-lines"></div></div></div>
+      <div class="ov-level"><div id="ovTAd"></div><div class="ov-chart"><div class="ov-ch-h"><b>Evolução diária · por anúncio</b><span>top 8 por verba · com anúncio selecionado, só a linha dele</span></div><div id="ovLAd" class="ov-lines"></div></div></div>
     </div>
 
     <div class="card">

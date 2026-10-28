@@ -398,191 +398,167 @@ function renderTable(){
   document.querySelectorAll('#optTable .trow[data-k="1"]').forEach(tr=>tr.onclick=()=>{ const k=tr.dataset.key; if(expanded.has(k)) expanded.delete(k); else expanded.add(k); renderTable(); });
 }
 
-// ---- otimização por criativo (aba Funil): cada anúncio somado em todas as campanhas do período ----
-// Ranking por vendas / CPL QLF / verba / ROAS, pódios, mapa (vendas × CPL QLF, bolha = verba) e tabela com diagnóstico.
-// Diagnóstico usa o CPL QLF médio da CONTA no período (verba total ÷ qualificadas totais) como régua.
-const CR = { sort:'sales', camp:'', min:300, open:new Set() };   // open = criativos abertos (quebra por campanha)
-let CR_ROWS = [];
-const CR_SKIP = new Set(['SEM_UTM','NAO_ATRIBUIDO','xxxxx','']);
-const CR_MINQ = 3;   // ranking de CPL QLF só vale com pelo menos 3 qualificadas
+// ---- Otimização V2 (aba Funil): Campanha · Conjunto · Anúncio, 100% filtrável (padrão das dashes da agência, igual à V2 da MPI) ----
+// Clicar em QUALQUER linha filtra a seção inteira só para aquele item (KPIs, tabelas de baixo e gráficos), mas as listas
+// continuam completas para trocar direto; clicar de novo limpa. Cada nível tem tabela + gráfico "por dia" logo abaixo
+// (top 8 por verba; com item selecionado no nível, só a linha dele). Linhas: Custo MQL, CPL, MQL, Leads, Vendas ou Investimento.
+const OV = { sel:{camp:null,adset:null,ad:null}, metric:'cplq', sort:{0:{k:'spend',rev:false},1:{k:'spend',rev:false},2:{k:'spend',rev:false}} };
+const OV_PAL=['#0f5ba8','#e9a23b','#2e9e3f','#d4544a','#9b59b6','#4aa3e8','#5b6b7b','#c06d1f'];
+const OV_LM=[{k:'cplq',l:'Custo MQL',cost:true},{k:'cpl',l:'CPL',cost:true},{k:'qlf',l:'MQL'},{k:'leads',l:'Leads'},{k:'sales',l:'Vendas'},{k:'spend',l:'Investimento',money:true}];
 const crSeg = c => { const p=String(c).split('|').map(s=>s.trim()).filter(Boolean); return p.length?p[p.length-1]:String(c); };
 const crCampLabel = c => { const dt=(String(c).match(/(\d{2})\/(\d{2})\/\d{4}/)||[]); return pretty(crSeg(c))+(dt[1]?` · ${dt[1]}/${dt[2]}`:''); };
-const crShort = s => { const t=pretty(s).replace(/^AD_?/i,'').replace(/_/g,' ').replace(/\s+/g,' ').trim(); return t.length>26?t.slice(0,25)+'…':t; };
-const CR_DIAG = {
-  champ:{l:'⭐ Campeão', c:'var(--green)', d:'vende e o CPL QLF está abaixo da média'},
-  pricey:{l:'💰 Vende, mas caro', c:'#d9822b', d:'traz venda, mas a qualificada sai acima da média'},
-  cheap:{l:'🧪 Barato, sem venda', c:'var(--blue2)', d:'qualificada barata, ainda sem venda no período'},
-  review:{l:'✂️ Revisar', c:'var(--red)', d:'caro e sem venda no período'},
-  old:{l:'🕰️ Leads antigos', c:'#7b8794', d:'vendas de leads de antes do período; pouca ou nenhuma verba agora'}
-};
-function crData(){
-  const map=new Map(), camps=new Map(); let all={spend:0,qlf:0}, unS=0, unR=0;
-  for(const r of D.grain){ if(r.date<state.start||r.date>state.end) continue;
-    all.spend+=r.spend; all.qlf+=r.qlf;
-    if(CR_SKIP.has(r.ad) || r.campaign==='NAO_ATRIBUIDO' || r.campaign==='SEM_UTM'){ unS+=r.sales; unR+=r.revenue; continue; }
-    camps.set(r.campaign,(camps.get(r.campaign)||0)+r.spend);
-    if(CR.camp && r.campaign!==CR.camp) continue;
-    let o=map.get(r.ad); if(!o){ o={ad:r.ad,m:nodeM(),camps:new Map(),by:new Map()}; map.set(r.ad,o); }
-    addM(o.m,r); o.camps.set(r.campaign,(o.camps.get(r.campaign)||0)+r.spend);
-    let bc=o.by.get(r.campaign); if(!bc){ bc=nodeM(); o.by.set(r.campaign,bc); } addM(bc,r);   // mesmo criativo, campanha a campanha
-  }
-  const avg=safe(all.spend,all.qlf);
-  const list=[...map.values()].filter(o=>o.m.spend>=CR.min || o.m.sales>0).map(o=>{ const m=o.m;
-    const cs=[...o.camps.entries()].sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
-    const cplq=m.qlf>0?m.spend/m.qlf:null, roas=safe(m.revenue,m.spend);
-    let dg; if(m.sales>0 && m.spend<Math.max(CR.min,1)) dg='old';   // só aparece pela venda: verba abaixo do mínimo no período
-    else if(m.sales>0) dg=(cplq!=null && cplq<=avg)?'champ':'pricey';
-    else dg=(cplq!=null && cplq<=avg)?'cheap':'review';
-    const by=[...o.by.entries()].sort((a,b)=>b[1].spend-a[1].spend || b[1].sales-a[1].sales);
-    return {ad:o.ad,m,cs,by,cplq,roas,cac:safe(m.spend,m.sales),txq:safe(m.qlf,m.leads)*100,dg}; });
-  return {list,avg,unS,unR,camps};
+const ovLM = () => OV_LM.find(x=>x.k===OV.metric)||OV_LM[0];
+function ovVal(d,k){ k=k||OV.metric;
+  if(k==='cplq') return d.qlf>0?d.spend/d.qlf:null;
+  if(k==='cpl') return d.leads>0?d.spend/d.leads:null;
+  return d[k==='rev'?'revenue':k]; }
+function ovFmt(v,k){ k=k||OV.metric; if(v==null) return '—'; const lm=OV_LM.find(x=>x.k===k);
+  return (lm&&(lm.cost||lm.money)) ? money(v) : int(v); }
+function ovAx(v){ const lm=ovLM(); return (lm.cost||lm.money) ? (v>=1000?`R$ ${n1(v/1000)}k`:`R$ ${int(v)}`) : n1(v); }
+function ovM(n){ const pl=n.leads-(n.fleads||0); return {
+  cpl:n.leads>0?n.spend/n.leads:null, cplq:n.qlf>0?n.spend/n.qlf:null, txq:n.leads>0?n.qlf/n.leads*100:null,
+  cac:(n.sales>0&&n.spend>0)?n.spend/n.sales:null, roas:n.spend>0?n.revenue/n.spend:null,
+  cpm:n.impr>0?n.spend/n.impr*1000:null, ctr:n.impr>0?n.clicks/n.impr*100:null, connect:n.clicks>0?n.lpv/n.clicks*100:null,
+  conv:(n.lpv>0 && !(n.fleads>0&&pl<=0))?pl/n.lpv*100:null }; }
+function ovGroup(rows,level){ const g=new Map();
+  for(const r of rows){ const key= level===0? r.campaign : (level===1? r.campaign+'\u0001'+r.adset : r.campaign+'\u0001'+r.adset+'\u0001'+r.ad);
+    let o=g.get(key); if(!o){ o={key,camp:r.campaign,adset:r.adset,ad:r.ad,name:pretty(level===0?r.campaign:(level===1?r.adset:r.ad)),m:nodeM(),rows:[]}; g.set(key,o); }
+    addM(o.m,r); o.rows.push(r); }
+  return [...g.values()].sort((a,b)=>b.m.spend-a.m.spend); }
+const ovLabel = (o,level) => level===0 ? crCampLabel(o.camp) : o.name;   // campanhas: o que diferencia é o fim do nome + data
+function ovIsSel(o,level){ const s=OV.sel; return level===0? s.camp===o.camp : (level===1? (s.camp===o.camp&&s.adset===o.adset) : (s.camp===o.camp&&s.adset===o.adset&&s.ad===o.ad)); }
+function ovPick(level,o){ const s=OV.sel;
+  if(level===0) OV.sel = s.camp===o.camp ? {camp:null,adset:null,ad:null} : {camp:o.camp,adset:null,ad:null};
+  else if(level===1) OV.sel = (s.camp===o.camp&&s.adset===o.adset) ? {camp:o.camp,adset:null,ad:null} : {camp:o.camp,adset:o.adset,ad:null};
+  else OV.sel = (s.camp===o.camp&&s.adset===o.adset&&s.ad===o.ad) ? {camp:o.camp,adset:o.adset,ad:null} : {camp:o.camp,adset:o.adset,ad:o.ad};
+  renderOV(); }
+function ovPill(v,avg){ if(v==null) return '—'; const col=!(avg>0)?'#7b8794':(v<=avg*0.8?'var(--green)':(v<=avg*1.2?'var(--yellow)':'var(--red)'));
+  return `<span class="pill" style="background:${col}">${money(v)}</span>`; }
+const OV_COLS=[
+  {k:'name'},
+  {k:'spend',l:'Gasto',b:'hi',v:o=>o.m.spend},
+  {k:'leads',l:'Leads',b:'hi',v:o=>o.m.leads},
+  {k:'cpl',l:'CPL',b:'lo',v:(o,x)=>x.cpl},
+  {k:'qlf',l:'MQL',b:'hi',v:o=>o.m.qlf},
+  {k:'cplq',l:'Custo MQL',b:'lo',v:(o,x)=>x.cplq},
+  {k:'txq',l:'% MQL',b:'hi',v:(o,x)=>x.txq},
+  {k:'sales',l:'Vendas',b:'hi',v:o=>o.m.sales},
+  {k:'cac',l:'CAC',b:'lo',v:(o,x)=>x.cac},
+  {k:'rev',l:'Receita',b:'hi',v:o=>o.m.revenue},
+  {k:'roas',l:'ROAS',b:'hi',v:(o,x)=>x.roas},
+  {k:'cpm',l:'CPM',b:'lo',v:(o,x)=>x.cpm},
+  {k:'ctr',l:'CTR',b:'hi',v:(o,x)=>x.ctr},
+  {k:'connect',l:'Connect',b:'hi',v:(o,x)=>x.connect},
+  {k:'conv',l:'Conv. pág.',b:'hi',v:(o,x)=>x.conv}
+];
+function ovSortList(list,level){ const s=OV.sort[level], col=OV_COLS.find(c=>c.k===s.k); if(!col) return list.slice();
+  const rows=list.map(o=>{ let v=col.k==='name'?String(o.name).toLowerCase():col.v(o,ovM(o.m)); if(typeof v==='number'&&!isFinite(v)) v=null; return {o,v}; });
+  rows.sort((a,b)=>{ if(a.v==null&&b.v==null) return b.o.m.spend-a.o.m.spend; if(a.v==null) return 1; if(b.v==null) return -1;
+    let r = col.k==='name' ? (a.v<b.v?-1:(a.v>b.v?1:0)) : (col.b==='hi' ? b.v-a.v : a.v-b.v); if(s.rev) r=-r; return r || b.o.m.spend-a.o.m.spend; });
+  return rows.map(x=>x.o); }
+function ovTable(elId,title,hint,list,level,avg){
+  const el=document.getElementById(elId); if(!el) return;
+  const lab=['Campanha','Conjunto','Anúncio'][level], ss=OV.sort[level];
+  if(!list.length){ el.innerHTML=`<div class="ov-th"><b>${title}</b></div><div class="ov-empty">Sem dados no período.</div>`; return; }
+  const shown=ovSortList(list,level);
+  const head='<tr>'+OV_COLS.map(c=>{ const on=ss.k===c.k; return `<th class="ov-sort${c.k==='name'?' ov-nm':''}${on?' on':''}" data-col="${c.k}" title="clique para ordenar (melhor → pior) · de novo para inverter">${c.k==='name'?lab:c.l}${on?` <span class="ov-arr">${ss.rev?'▲':'▼'}</span>`:''}</th>`; }).join('')+'</tr>';
+  const body=shown.map((o,i)=>{ const m=o.m, x=ovM(m), sel=ovIsSel(o,level);
+    const ctx = level===0 ? `<div class="ov-ctx">${esc(o.name)}</div>` : (level===1 ? `<div class="ov-ctx">${esc(crCampLabel(o.camp))}</div>` : `<div class="ov-ctx">${esc(crCampLabel(o.camp))} › ${esc(pretty(o.adset))}</div>`);
+    return `<tr class="ov-row${sel?' sel':''}" data-i="${i}">
+      <td class="ov-nm"><div class="ov-name" title="${esc(o.name)}">${sel?'● ':''}${esc(ovLabel(o,level))}</div>${ctx}</td>
+      <td>${money(m.spend)}</td><td>${int(m.leads)}</td><td>${x.cpl!=null?money(x.cpl):'—'}</td>
+      <td>${int(m.qlf)}</td><td>${ovPill(x.cplq,avg)}</td><td>${x.txq!=null?pct(x.txq):'—'}</td>
+      <td>${int(m.sales)}</td><td>${x.cac!=null?money(x.cac):'—'}</td><td>${money(m.revenue)}</td><td>${x.roas!=null?fmtRoas(x.roas):'—'}</td>
+      <td>${x.cpm!=null?money(x.cpm):'—'}</td><td>${x.ctr!=null?pct(x.ctr):'—'}</td><td>${x.connect!=null?pct(x.connect):'—'}</td><td>${x.conv!=null?pct(x.conv):'—'}</td></tr>`; }).join('');
+  el.innerHTML=`<div class="ov-th"><b>${title}</b><span>${hint} · ${int(list.length)} ${list.length===1?'item':'itens'}</span></div>
+    <div class="table-scroll ov-scroll"><table class="ov-tbl"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  el.querySelectorAll('tr.ov-row').forEach(tr=>tr.onclick=()=>{ const o=shown[+tr.dataset.i]; if(o) ovPick(level,o); });
+  el.querySelectorAll('th.ov-sort').forEach(th=>th.onclick=()=>{ const k=th.dataset.col, s=OV.sort[level]; if(s.k===k) s.rev=!s.rev; else { s.k=k; s.rev=false; } ovTable(elId,title,hint,list,level,avg); });
 }
-function crSort(list){
-  const by={
-    sales:(a,b)=>b.m.sales-a.m.sales || b.m.revenue-a.m.revenue || (a.cplq??1e9)-(b.cplq??1e9),
-    cplq:(a,b)=>{ const ra=a.m.qlf>=CR_MINQ?0:(a.m.qlf>0?1:2), rb=b.m.qlf>=CR_MINQ?0:(b.m.qlf>0?1:2); return ra-rb || (a.cplq??1e9)-(b.cplq??1e9) || b.m.sales-a.m.sales; },
-    spend:(a,b)=>b.m.spend-a.m.spend,
-    roas:(a,b)=>(a.dg==='old')-(b.dg==='old') || (b.m.spend>0)-(a.m.spend>0) || b.roas-a.roas || b.m.sales-a.m.sales   // ROAS de verba quase zero não lidera
-  };
-  return list.slice().sort(by[CR.sort]||by.sales);
+function ovLines(groups,elId,level){
+  const el=document.getElementById(elId); if(!el) return;
+  const s=OV.sel, lm=ovLM();
+  let sub=groups;
+  if(level===0&&s.camp!=null) sub=groups.filter(g=>g.camp===s.camp);
+  else if(level===1&&s.adset!=null) sub=groups.filter(g=>g.camp===s.camp&&g.adset===s.adset);
+  else if(level===2&&s.ad!=null) sub=groups.filter(g=>g.camp===s.camp&&g.adset===s.adset&&g.ad===s.ad);
+  const top=sub.filter(g=>g.m.spend>0).slice(0,8), solo=top.length===1;
+  if(!top.length){ el.innerHTML='<div class="ov-empty">Sem verba no período para traçar as linhas.</div>'; return; }
+  for(const g of top){ const mp=new Map(); for(const r of g.rows){ let d=mp.get(r.date); if(!d){ d={spend:0,leads:0,qlf:0,sales:0,revenue:0}; mp.set(r.date,d); } d.spend+=r.spend; d.leads+=r.leads; d.qlf+=r.qlf; d.sales+=r.sales; d.revenue+=r.revenue; } g.map=mp; }
+  const dset=new Set(); top.forEach(g=>{ for(const [dt,d] of g.map) if(d.spend>0) dset.add(dt); });
+  const dates=[...dset].sort(), n=dates.length;
+  if(!n){ el.innerHTML='<div class="ov-empty">Sem verba no período para traçar as linhas.</div>'; return; }
+  const vals=[]; top.forEach(g=>dates.forEach(dt=>{ const d=g.map.get(dt); const v=d?ovVal(d):null; if(v!=null) vals.push(v); }));
+  const srt=vals.slice().sort((a,b)=>a-b); let max=srt.length?srt[srt.length-1]:1;
+  if(lm.cost && srt.length>=8){ const q=srt[Math.floor(srt.length*0.92)]; max=Math.min(max,q*1.25); }   // pico isolado não achata o resto
+  if(!(max>0)) max=1;
+  const W=Math.max(340,el.clientWidth||900), H=250, pl=60, pr=16, pt=16, pb=28, pw=W-pl-pr, ph=H-pt-pb, base=pt+ph;
+  const X=i=>pl+(n>1?pw/(n-1)*i:pw/2), Y=v=>base-ph*Math.min(1,v/max);
+  let svg='';
+  [0,0.5,1].forEach(f=>{ const y=pt+ph*(1-f); svg+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#eef2f6"/><text x="${pl-6}" y="${y+3}" text-anchor="end" font-size="10" fill="#7b8794">${ovAx(max*f)}</text>`; });
+  if(solo && lm.cost){ const g=top[0], avg=ovVal({spend:g.m.spend,leads:g.m.leads,qlf:g.m.qlf}); if(avg!=null){ const y=Y(avg);
+    svg+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#41505e" stroke-dasharray="5 4" stroke-width="1"/><text x="${W-pr}" y="${y-5}" text-anchor="end" font-size="10" font-weight="700" fill="#41505e">média do período ${money(avg)}</text>`; } }
+  top.forEach((g,gi)=>{ const col=OV_PAL[gi%OV_PAL.length]; let seg=[], segs=[], pts=[];
+    dates.forEach((dt,i)=>{ const d=g.map.get(dt), v=d?ovVal(d):null;
+      if(v==null){ if(seg.length) segs.push(seg); seg=[]; return; }
+      const p=[X(i),Y(v),v>max]; seg.push(p); pts.push(p); });
+    if(seg.length) segs.push(seg);
+    segs.forEach(sg=>{ if(sg.length>1) svg+=`<path d="M${sg.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L')}" fill="none" stroke="${col}" stroke-width="${solo?2.4:2}" stroke-linejoin="round" opacity=".92"/>`; });
+    pts.forEach(p=>{ svg+= p[2] ? `<path d="M${(p[0]-4).toFixed(1)} ${(pt+7).toFixed(1)} L${p[0].toFixed(1)} ${pt.toFixed(1)} L${(p[0]+4).toFixed(1)} ${(pt+7).toFixed(1)}Z" fill="${col}"/>` : `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${solo?3:2.3}" fill="${col}"/>`; });
+  });
+  const step=Math.max(1,Math.ceil(n/12)); dates.forEach((dt,i)=>{ if(i%step===0||i===n-1) svg+=`<text x="${X(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#7b8794">${cxDM(dt)}</text>`; });
+  const bw=n>1?pw/(n-1):pw; dates.forEach((dt,i)=>{ const x=Math.max(pl,X(i)-bw/2); svg+=`<rect class="hz" data-i="${i}" x="${x.toFixed(1)}" y="${pt}" width="${bw.toFixed(1)}" height="${ph}" fill="transparent"/>`; });
+  const legend=top.map((g,gi)=>{ const nm=ovLabel(g,level); return `<span class="ov-leg${ovIsSel(g,level)?' on':''}" data-gi="${gi}" title="${esc(g.name)} · clique para filtrar"><i style="background:${OV_PAL[gi%OV_PAL.length]}"></i>${esc(!solo&&nm.length>40?nm.slice(0,39)+'…':nm)}</span>`; }).join('');
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(lm.l)} por dia">${svg}</svg>
+    <div class="ov-legs"><span class="ov-metnote">linha = <b>${lm.l} por dia</b>${lm.cost?' · dia sem '+(OV.metric==='cplq'?'MQL':'lead')+' fica sem ponto · ▲ = acima da escala':''}</span>${legend}</div>`;
+  el.querySelectorAll('.ov-leg').forEach(sp=>sp.onclick=()=>{ const g=top[+sp.dataset.gi]; if(g) ovPick(level,g); });
+  attachTip(elId, ds=>{ const dt=dates[+ds.i]; const items=[];
+    top.forEach((g,gi)=>{ const d=g.map.get(dt); if(d&&(d.spend>0||d.leads>0)) items.push({g,gi,d,v:ovVal(d)}); });
+    items.sort((a,b)=>(b.v==null?-1:b.v)-(a.v==null?-1:a.v));
+    return `<div class="tt-d">${dt.split('-').reverse().join('/')} · ${WD[parseD(dt).getDay()]} · ${esc(lm.l)}</div>` + (items.length ? items.map(it=>{ const full=ovLabel(it.g,level), nm=full.length>30?full.slice(0,29)+'…':full;
+      return `<div class="tt-r"><span class="tdot" style="background:${OV_PAL[it.gi%OV_PAL.length]}"></span>${esc(nm)}<b>${ovFmt(it.v)}</b></div><div class="tt-r"><span class="sub">gasto ${money(it.d.spend)} · ${int(it.d.leads)} leads · ${int(it.d.qlf)} MQL · ${int(it.d.sales)} vendas</span></div>`; }).join('') : '<div class="tt-r"><span class="sub">sem gasto nesse dia</span></div>'); });
 }
-function crPill(v,qlf,avg){
-  if(!qlf || v==null) return '<span class="pill" style="background:#aab4bf">—</span>';
-  const col = v<=avg*0.8?'var(--green)':(v<=avg*1.2?'var(--yellow)':'var(--red)');
-  return `<span class="pill" style="background:${col}">${money(v)}</span>`;
-}
-function crCampChips(cs){
-  if(!cs.length) return '';
-  const more=cs.length-1, rest=cs.slice(1).map(crCampLabel).join(' · ');
-  return `<span class="cr-chip" title="${esc(pretty(cs[0]))}">${esc(crCampLabel(cs[0]))}</span>${more?`<span class="cr-chip cr-more" title="${esc(rest)} · clique para ver por campanha">+${more} ${more===1?'campanha':'campanhas'} ▾</span>`:''}`;
-}
-function renderCreatives(){
-  const card=document.getElementById('crCard'); if(!card) return;
-  const sel=document.getElementById('crCamp');
-  const {list,avg,unS,unR,camps}=crData();
-  // campanhas com verba no período (mantém a escolhida mesmo se sumir do período)
-  const opts=[...camps.entries()].filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]).map(([c])=>c);
-  if(CR.camp && !opts.includes(CR.camp)) opts.unshift(CR.camp);
-  sel.innerHTML='<option value="">Todas</option>'+opts.map(c=>`<option value="${esc(c)}"${c===CR.camp?' selected':''}>${esc(crCampLabel(c))}</option>`).join('');
-  document.querySelectorAll('#crSort button').forEach(b=>b.classList.toggle('on',b.dataset.s===CR.sort));
-  const rows=crSort(list);
-
-  // ---- pódios ----
-  const med=['🥇','🥈','🥉'];
-  const topSales=list.filter(x=>x.m.sales>0).sort((a,b)=>b.m.sales-a.m.sales||b.m.revenue-a.m.revenue).slice(0,3);
-  let qMin=5, topCpl=list.filter(x=>x.m.qlf>=qMin && x.m.spend>0).sort((a,b)=>a.cplq-b.cplq).slice(0,3);
-  if(topCpl.length<3){ qMin=CR_MINQ; topCpl=list.filter(x=>x.m.qlf>=qMin && x.m.spend>0).sort((a,b)=>a.cplq-b.cplq).slice(0,3); }
-  const pod=(title,sub,items,big,small,cls)=>`<div class="cr-pod ${cls}">
-      <div class="cr-pod-h"><b>${title}</b><span>${sub}</span></div>
-      ${items.length?items.map((x,i)=>`<div class="cr-pod-row" title="${esc(pretty(x.ad))} · clique para ver por campanha" data-ad="${esc(x.ad)}">
-        <span class="cr-medal">${med[i]}</span>
-        <div class="cr-pod-name"><div>${esc(pretty(x.ad))}</div><div class="cr-pod-camps">${crCampChips(x.cs)}</div></div>
-        <div class="cr-pod-num"><b>${big(x)}</b><span>${small(x)}</span></div></div>`).join('')
-        : '<div class="cr-empty">Nenhum criativo nesse critério no período.</div>'}
-    </div>`;
-  document.getElementById('crPodiums').innerHTML =
-    pod('🏆 Mais vendas','compradoras que vieram do anúncio',topSales,x=>`${int(x.m.sales)} ${x.m.sales===1?'venda':'vendas'}`,x=>`${money(x.m.revenue)} · CPL QLF ${x.cplq!=null?money(x.cplq):'—'}`,'p-sales') +
-    pod('💎 Menor CPL qualificado',`com pelo menos ${qMin} qualificadas · média da conta ${money(avg)}`,topCpl,x=>money(x.cplq),x=>`${int(x.m.qlf)} qualificadas · ${int(x.m.sales)} ${x.m.sales===1?'venda':'vendas'}`,'p-cpl');
-
-  // ---- mapa: x = CPL QLF (escala log), y = vendas, bolha = verba ----
-  const box=document.getElementById('crMap');
-  const pts=list.filter(x=>x.cplq!=null && x.m.spend>0);
-  if(!pts.length){ box.innerHTML='<div class="cr-empty">Sem criativos com qualificadas e verba no período.</div>'; }
-  else{
-    const W=Math.max(340,box.clientWidth||900), H=320, pad={l:46,r:18,t:22,b:40}, iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
-    const xs=pts.map(x=>x.cplq).concat([avg]).filter(v=>v>0);
-    const lx0=Math.log(Math.min(...xs)*0.8), lx1=Math.log(Math.max(...xs)*1.25);
-    const X=v=>pad.l+(Math.log(v)-lx0)/(lx1-lx0||1)*iw;
-    const yb=pad.t+ih-22, yt=pad.t+20;   // faixas de cima/baixo reservadas p/ os rótulos dos quadrantes
-    const ymax=Math.max(1,...pts.map(x=>x.m.sales)), Y=v=>yb-(v+0.5)/(ymax+1)*(yb-yt);
-    const smax=Math.max(...pts.map(x=>x.m.spend)), R=v=>5+17*Math.sqrt(v/smax);
-    let g='';
-    for(const t of [10,25,50,100,200,400,800,1600,3200,6400]){ const lt=Math.log(t); if(lt<lx0||lt>lx1) continue; const x=X(t);
-      g+=`<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t+ih}" stroke="#eef2f6"/><text x="${x}" y="${H-22}" font-size="10" text-anchor="middle" fill="#7b8794">R$ ${int(t)}</text>`; }
-    const ystep=Math.max(1,Math.ceil(ymax/5));
-    for(let v=0;v<=ymax;v+=ystep){ const y=Y(v); g+=`<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#eef2f6"/><text x="${pad.l-8}" y="${y+3}" font-size="10" text-anchor="end" fill="#7b8794">${v}</text>`; }
-    const ax=X(avg), ySplit=Y(0.5);
-    const quad=`<rect x="${pad.l}" y="${pad.t}" width="${Math.max(0,ax-pad.l)}" height="${Math.max(0,ySplit-pad.t)}" fill="rgba(46,158,63,.07)"/>
-      <rect x="${ax}" y="${pad.t}" width="${Math.max(0,pad.l+iw-ax)}" height="${Math.max(0,ySplit-pad.t)}" fill="rgba(217,130,43,.07)"/>
-      <rect x="${pad.l}" y="${ySplit}" width="${Math.max(0,ax-pad.l)}" height="${Math.max(0,pad.t+ih-ySplit)}" fill="rgba(47,127,209,.06)"/>
-      <rect x="${ax}" y="${ySplit}" width="${Math.max(0,pad.l+iw-ax)}" height="${Math.max(0,pad.t+ih-ySplit)}" fill="rgba(224,72,58,.06)"/>
-      <line x1="${ax}" y1="${pad.t}" x2="${ax}" y2="${pad.t+ih}" stroke="#41505e" stroke-dasharray="4 4" stroke-width="1.2"/>
-      <line x1="${pad.l}" y1="${ySplit}" x2="${pad.l+iw}" y2="${ySplit}" stroke="#c9d3dd" stroke-dasharray="2 4"/>
-      <text x="${pad.l+8}" y="${pad.t+14}" font-size="11" font-weight="800" fill="#2e9e3f">⭐ Campeões · escalar</text>
-      <text x="${pad.l+iw-8}" y="${pad.t+14}" font-size="11" font-weight="800" fill="#c06d1f" text-anchor="end">💰 Vendem, mas caros · otimizar</text>
-      <text x="${pad.l+8}" y="${pad.t+ih-8}" font-size="11" font-weight="800" fill="#2f7fd1">🧪 Baratos, sem venda · dar tempo</text>
-      <text x="${pad.l+iw-8}" y="${pad.t+ih-8}" font-size="11" font-weight="800" fill="#d4544a" text-anchor="end">✂️ Caros e sem venda · revisar</text>
-      <text x="${ax}" y="${pad.t-7}" font-size="10" font-weight="700" fill="#41505e" text-anchor="middle">média ${money(avg)}</text>
-      <text x="${pad.l+iw/2}" y="${H-6}" font-size="10.5" text-anchor="middle" fill="#41505e" font-weight="700">CPL qualificado (escala log) → mais caro</text>
-      <text x="12" y="${pad.t+ih/2}" font-size="10.5" fill="#41505e" font-weight="700" transform="rotate(-90 12 ${pad.t+ih/2})" text-anchor="middle">vendas</text>`;
-    const ord=pts.slice().sort((a,b)=>b.m.spend-a.m.spend);   // grandes atrás, pequenas na frente
-    const labelSet=new Set(pts.slice().sort((a,b)=>b.m.sales-a.m.sales||b.m.spend-a.m.spend).slice(0,6).map(x=>x.ad));
-    let dots='', labs='';
-    ord.forEach(x=>{ const cx=X(x.cplq), cy=Y(x.m.sales), r=R(x.m.spend), col=CR_DIAG[x.dg].c, i=pts.indexOf(x);
-      dots+=`<circle class="hz cr-dot" cx="${cx}" cy="${cy}" r="${r}" fill="${col}" fill-opacity=".55" stroke="${col}" stroke-width="1.5" data-i="${i}"/>`;
-      if(labelSet.has(x.ad)){ const right=cx<pad.l+iw*0.7; labs+=`<text x="${right?cx+r+4:cx-r-4}" y="${cy+3.5}" font-size="10.5" font-weight="700" fill="#1f2933" text-anchor="${right?'start':'end'}" paint-order="stroke" stroke="#fff" stroke-width="3">${esc(crShort(x.ad))}</text>`; } });
-    box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Mapa dos criativos: vendas por CPL qualificado">${g}${quad}${dots}${labs}</svg>`;
-    attachTip('crMap', ds=>{ const x=pts[+ds.i], dg=CR_DIAG[x.dg];
-      return `<div class="tt-d">${esc(pretty(x.ad))}</div>
-        <div class="tt-r"><span class="sub">${esc(x.cs.map(crCampLabel).join(' · '))}</span></div>
-        <div class="tt-r">Verba<b>${money(x.m.spend)}</b></div>
-        <div class="tt-r">Qualificadas<b>${int(x.m.qlf)}</b></div>
-        <div class="tt-r">CPL qualificado<b>${money(x.cplq)}</b></div>
-        <div class="tt-r">Vendas<b>${int(x.m.sales)}</b></div>
-        <div class="tt-r">ROAS<b>${fmtRoas(x.roas)}</b></div>
-        <div class="tt-r"><span class="tdot" style="background:${dg.c}"></span>${dg.l}</div>`; });
-  }
-
-  // ---- tabela ----
-  const maxS=Math.max(1,...rows.map(x=>x.m.sales));
-  const sortCol={sales:'Vendas',cplq:'CPL QLF',spend:'Verba',roas:'ROAS'}[CR.sort];
-  const th=(l,k)=>`<th class="${l===sortCol?'sorted':''}"${k?` data-s="${k}"`:''}>${l}</th>`;
-  document.querySelector('#crTable thead').innerHTML=`<tr><th class="cr-rk">#</th><th class="cr-name">Criativo · campanha</th>${th('Verba','spend')}${th('Leads')}${th('Qualificadas')}${th('% Qualif')}${th('CPL QLF','cplq')}${th('Vendas','sales')}${th('Receita')}${th('ROAS','roas')}${th('CAC')}<th class="cr-dg">Diagnóstico</th></tr>`;
-  CR_ROWS=rows;
-  // linha por campanha (quando o criativo está aberto): mesmas colunas, mesma régua de CPL QLF
-  const subRows=x=>{ const tot=x.m.spend;
-    return `<tr class="cr-subhead"><td></td><td colspan="11">📂 <b>${x.by.length} ${x.by.length===1?'campanha':'campanhas'}</b> em que este criativo rodou no período · ordenadas por verba</td></tr>` +
-      x.by.map(([camp,m])=>{ const cq=m.qlf>0?m.spend/m.qlf:null;
-        return `<tr class="cr-sub">
-          <td></td>
-          <td class="cr-name"><div class="cr-subcamp"><span class="cr-chip">${esc(crCampLabel(camp))}</span></div><div class="cr-full" title="${esc(pretty(camp))}">${esc(pretty(camp))}</div></td>
-          <td>${money(m.spend)}</td>
-          <td>${int(m.leads)}</td>
-          <td>${int(m.qlf)}</td>
-          <td>${m.leads>0?pct(safe(m.qlf,m.leads)*100):'—'}</td>
-          <td>${crPill(cq,m.qlf,avg)}</td>
-          <td><b>${int(m.sales)}</b></td>
-          <td>${money(m.revenue)}</td>
-          <td>${m.spend>0?fmtRoas(safe(m.revenue,m.spend)):'—'}</td>
-          <td>${m.sales>0&&m.spend>0?money(safe(m.spend,m.sales)):'—'}</td>
-          <td class="cr-dg"><span class="cr-share">${tot>0?`${pct(safe(m.spend,tot)*100)} da verba`:'sem verba no período'}</span></td></tr>`; }).join(''); };
-  document.querySelector('#crTable tbody').innerHTML = rows.length ? rows.map((x,i)=>{ const m=x.m, dg=CR_DIAG[x.dg];
-    const few = CR.sort==='cplq' && m.qlf>0 && m.qlf<CR_MINQ, isOpen=CR.open.has(x.ad);
-    return `<tr class="cr-row${i<3?' cr-top':''}${isOpen?' cr-open':''}" data-i="${i}" title="Clique para ${isOpen?'fechar':'ver'} a quebra por campanha">
-      <td class="cr-rk">${i<3?med[i]:i+1}</td>
-      <td class="cr-name"><div class="cr-ad"><span class="caret">${isOpen?'▾':'▸'}</span>${esc(pretty(x.ad))}</div><div class="cr-camps">${crCampChips(x.cs)}</div></td>
-      <td>${money(m.spend)}</td>
-      <td>${int(m.leads)}</td>
-      <td>${int(m.qlf)}</td>
-      <td>${m.leads>0?pct(x.txq):'—'}</td>
-      <td>${crPill(x.cplq,m.qlf,avg)}${few?'<div class="cr-few">poucos dados</div>':''}</td>
-      <td class="cr-sales"><div class="cr-sbar"><i style="width:${(m.sales/maxS*60).toFixed(1)}px"></i><b>${int(m.sales)}</b></div></td>
-      <td>${money(m.revenue)}</td>
-      <td>${m.spend>0?fmtRoas(x.roas):'—'}</td>
-      <td>${m.sales>0&&m.spend>0?money(x.cac):'—'}</td>
-      <td class="cr-dg"><span class="cr-tag" style="color:${dg.c};border-color:${dg.c}" title="${esc(dg.d)}">${dg.l}</span></td></tr>` + (isOpen?subRows(x):''); }).join('')
-    : '<tr><td colspan="12" class="cr-empty">Nenhum criativo com esse filtro no período.</td></tr>';
-  document.querySelectorAll('#crTable thead th[data-s]').forEach(t=>t.onclick=()=>{ CR.sort=t.dataset.s; renderCreatives(); });
-  document.querySelectorAll('#crTable tbody tr.cr-row').forEach(tr=>tr.onclick=()=>{ const x=CR_ROWS[+tr.dataset.i]; if(!x) return;
-    if(CR.open.has(x.ad)) CR.open.delete(x.ad); else CR.open.add(x.ad); renderCreatives(); });
-  // pódio: clicar abre o criativo na tabela já com a quebra por campanha
-  document.querySelectorAll('#crPodiums .cr-pod-row').forEach(el=>el.onclick=()=>{ const ad=el.dataset.ad; CR.open.add(ad); renderCreatives();
-    const i=CR_ROWS.findIndex(x=>x.ad===ad), tr=document.querySelector(`#crTable tbody tr.cr-row[data-i="${i}"]`);
-    if(tr){ const sc=tr.closest('.table-scroll'); if(sc) sc.scrollTop=tr.offsetTop-40; tr.closest('.cr-card').querySelector('.cr-scroll').scrollIntoView({behavior:'smooth',block:'nearest'}); } });
-  document.getElementById('crNote').innerHTML =
-    `${int(rows.length)} criativos${CR.camp?` na campanha <b>${esc(crCampLabel(CR.camp))}</b>`:''} · CPL QLF médio da conta no período: <b>${money(avg)}</b> (verde = 20% abaixo da média ou mais, vermelho = 20% acima)` +
-    (unS?` · <b>${int(unS)} ${unS===1?'venda':'vendas'}</b> (${money(unR)}) do período não têm criativo identificado e ficam fora desta visão`:'') +
-    ` · criativos com verba abaixo do mínimo só aparecem se tiverem venda.`;
+function ovCrumb(){ const s=OV.sel;
+  const p=[`<a class="ov-crumb${s.camp==null?' cur':''}" data-lvl="0">📊 Todas as campanhas</a>`];
+  if(s.camp!=null) p.push(`<a class="ov-crumb${s.adset==null?' cur':''}" data-lvl="1">${esc(crCampLabel(s.camp))}</a>`);
+  if(s.adset!=null) p.push(`<a class="ov-crumb${s.ad==null?' cur':''}" data-lvl="2">${esc(pretty(s.adset))}</a>`);
+  if(s.ad!=null) p.push(`<span class="ov-crumb cur">${esc(pretty(s.ad))}</span>`);
+  return p.join('<span class="ov-sep">›</span>'); }
+function renderOV(){
+  const wrap=document.getElementById('ovWrap'); if(!wrap) return;
+  const base=D.grain.filter(r=>r.date>=state.start&&r.date<=state.end);
+  // seleção que sumiu do recorte (trocou o período) é limpa
+  const s=OV.sel;
+  if(s.camp!=null && !base.some(r=>r.campaign===s.camp)) OV.sel={camp:null,adset:null,ad:null};
+  else { if(s.adset!=null && !base.some(r=>r.campaign===s.camp&&r.adset===s.adset)){ s.adset=null; s.ad=null; }
+         if(s.ad!=null && !base.some(r=>r.campaign===s.camp&&r.adset===s.adset&&r.ad===s.ad)) s.ad=null; }
+  const S=OV.sel;
+  document.querySelectorAll('#ovMetric button').forEach(b=>b.classList.toggle('on',b.dataset.m===OV.metric));
+  document.getElementById('ovCrumb').innerHTML=ovCrumb();
+  document.querySelectorAll('#ovCrumb a.ov-crumb').forEach(a=>a.onclick=()=>{ const l=+a.dataset.lvl;
+    OV.sel = l===0?{camp:null,adset:null,ad:null}:(l===1?{camp:S.camp,adset:null,ad:null}:{camp:S.camp,adset:S.adset,ad:null}); renderOV(); });
+  document.getElementById('ovClear').hidden = S.camp==null;
+  // KPIs do recorte selecionado
+  const scope=base.filter(r=>(S.camp==null||r.campaign===S.camp)&&(S.adset==null||r.adset===S.adset)&&(S.ad==null||r.ad===S.ad));
+  const a=nodeM(); scope.forEach(r=>addM(a,r)); const x=ovM(a);
+  const all=nodeM(); base.forEach(r=>addM(all,r)); const avg=all.qlf>0?all.spend/all.qlf:null;
+  const k=(l,v,sub)=>`<div class="ov-kpi"><span>${l}</span><b>${v}</b>${sub?`<small>${sub}</small>`:''}</div>`;
+  document.getElementById('ovKpis').innerHTML =
+    k('Investimento',money(a.spend)) + k('Leads',int(a.leads),x.cpl!=null?`CPL ${money(x.cpl)}`:'') +
+    k('MQL',int(a.qlf),x.txq!=null?`${pct(x.txq)} dos leads`:'') + k('Custo MQL',x.cplq!=null?money(x.cplq):'—',avg&&x.cplq!=null&&S.camp!=null?`média da conta ${money(avg)}`:'') +
+    k('Vendas',int(a.sales),x.cac!=null?`CAC ${money(x.cac)}`:'') + k('ROAS',x.roas!=null?fmtRoas(x.roas):'—',`receita ${money(a.revenue)}`);
+  // cada nível: tabela (lista completa do nível) + gráfico por dia logo abaixo
+  const campG=ovGroup(base,0);
+  ovTable('ovTCamp','Campanhas','clique numa linha para filtrar tudo · clique de novo para limpar',campG,0,avg);
+  ovLines(campG,'ovLCamp',0);
+  const conjRows = S.camp!=null ? base.filter(r=>r.campaign===S.camp) : base;
+  const conjG=ovGroup(conjRows,1);
+  ovTable('ovTAdset','Conjuntos', S.camp!=null?'da campanha selecionada':'todos · selecione uma campanha para focar', conjG,1,avg);
+  ovLines(conjG,'ovLAdset',1);
+  const adRows = S.adset!=null ? base.filter(r=>r.campaign===S.camp&&r.adset===S.adset) : conjRows;
+  const adG=ovGroup(adRows,2);
+  ovTable('ovTAd','Anúncios', S.adset!=null?'do conjunto selecionado':(S.camp!=null?'da campanha selecionada':'todos'), adG,2,avg);
+  ovLines(adG,'ovLAd',2);
 }
 
 // ---- sales by campaign ----
@@ -1293,7 +1269,7 @@ function render(){
   renderInvest(cur);
   renderFunnel(cur,prev);
   renderTable();
-  try{ renderCreatives(); }catch(err){ console.error('Criativos:',err); }
+  try{ renderOV(); }catch(err){ console.error('Otimização V2:',err); }
   renderDaily();
   renderSales();
   renderComercial();
@@ -1697,13 +1673,12 @@ function init(){
     document.querySelector('.controls').style.display = NOCTRL.includes(pg) ? 'none' : '';
     if(pg==='apice') renderApChart();   // o gráfico mede a largura real -> desenha quando a aba aparece
     if(pg==='consolidado') cxRedrawCharts();
-    if(pg==='funnel') renderCreatives();   // o mapa dos criativos mede a largura real
+    if(pg==='funnel') renderOV();   // os gráficos da Otimização V2 medem a largura real
   });
-  let apRz=0; window.addEventListener('resize',()=>{ clearTimeout(apRz); apRz=setTimeout(()=>{ const pg=document.getElementById('pageApice'); if(pg && !pg.hidden) renderApChart(); cxRedrawCharts(); const pf=document.getElementById('pageFunnel'); if(pf && !pf.hidden) renderCreatives(); },150); });
-  // Otimização por criativo: ordenação, campanha e gasto mínimo
-  document.querySelectorAll('#crSort button').forEach(b=>b.onclick=()=>{ CR.sort=b.dataset.s; renderCreatives(); });
-  document.getElementById('crCamp').onchange=e=>{ CR.camp=e.target.value; renderCreatives(); };
-  document.getElementById('crMin').onchange=e=>{ CR.min=+e.target.value||0; renderCreatives(); };
+  let apRz=0; window.addEventListener('resize',()=>{ clearTimeout(apRz); apRz=setTimeout(()=>{ const pg=document.getElementById('pageApice'); if(pg && !pg.hidden) renderApChart(); cxRedrawCharts(); const pf=document.getElementById('pageFunnel'); if(pf && !pf.hidden) renderOV(); },150); });
+  // Otimização V2: métrica das linhas e limpar filtro
+  document.querySelectorAll('#ovMetric button').forEach(b=>b.onclick=()=>{ OV.metric=b.dataset.m; renderOV(); });
+  document.getElementById('ovClear').onclick=()=>{ OV.sel={camp:null,adset:null,ad:null}; renderOV(); };
   // Consolidado: controles do funil e do gráfico por dia
   const cxRe=()=>{ renderCxFun(); renderCxDay(); };
   document.getElementById('cxView').onchange=e=>{ CX.view=e.target.value; cxRe(); };
