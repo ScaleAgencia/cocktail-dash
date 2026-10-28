@@ -505,6 +505,11 @@ function ovLines(groups,elId,level){
     if(seg.length) segs.push(seg);
     segs.forEach(sg=>{ if(sg.length>1) svg+=`<path d="M${sg.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L')}" fill="none" stroke="${col}" stroke-width="${solo?2.4:2}" stroke-linejoin="round" opacity=".92"/>`; });
     pts.forEach(p=>{ svg+= p[2] ? `<path d="M${(p[0]-4).toFixed(1)} ${(pt+7).toFixed(1)} L${p[0].toFixed(1)} ${pt.toFixed(1)} L${(p[0]+4).toFixed(1)} ${(pt+7).toFixed(1)}Z" fill="${col}"/>` : `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${solo?3:2.3}" fill="${col}"/>`; });
+    // com 1 item na tela, o valor de cada dia fica escrito em cima do ponto (sem precisar passar o mouse)
+    if(solo){ const every=Math.max(1,Math.ceil(n/31));
+      dates.forEach((dt,i)=>{ if(i%every) return; const d=g.map.get(dt), v=d?ovVal(d):null; if(v==null) return;
+        const yy=v>max?pt+16:Math.max(pt+10,Y(v)-7);
+        svg+=`<text x="${X(i).toFixed(1)}" y="${yy.toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1f2933" paint-order="stroke" stroke="#fbfcfe" stroke-width="3">${lm.cost||lm.money?(v>=1000?'R$ '+n1(v/1000)+'k':'R$ '+int(v)):int(v)}</text>`; }); }
   });
   const step=Math.max(1,Math.ceil(n/12)); dates.forEach((dt,i)=>{ if(i%step===0||i===n-1) svg+=`<text x="${X(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#7b8794">${cxDM(dt)}</text>`; });
   const bw=n>1?pw/(n-1):pw; dates.forEach((dt,i)=>{ const x=Math.max(pl,X(i)-bw/2); svg+=`<rect class="hz" data-i="${i}" x="${x.toFixed(1)}" y="${pt}" width="${bw.toFixed(1)}" height="${ph}" fill="transparent"/>`; });
@@ -516,7 +521,11 @@ function ovLines(groups,elId,level){
     top.forEach((g,gi)=>{ const d=g.map.get(dt); if(d&&(d.spend>0||d.leads>0)) items.push({g,gi,d,v:ovVal(d)}); });
     items.sort((a,b)=>(b.v==null?-1:b.v)-(a.v==null?-1:a.v));
     return `<div class="tt-d">${dt.split('-').reverse().join('/')} · ${WD[parseD(dt).getDay()]} · ${esc(lm.l)}</div>` + (items.length ? items.map(it=>{ const full=ovLabel(it.g,level), nm=full.length>30?full.slice(0,29)+'…':full;
-      return `<div class="tt-r"><span class="tdot" style="background:${OV_PAL[it.gi%OV_PAL.length]}"></span>${esc(nm)}<b>${ovFmt(it.v)}</b></div><div class="tt-r"><span class="sub">gasto ${money(it.d.spend)} · ${int(it.d.leads)} leads · ${int(it.d.qlf)} MQL · ${int(it.d.sales)} vendas</span></div>`; }).join('') : '<div class="tt-r"><span class="sub">sem gasto nesse dia</span></div>'); });
+      const cq=it.d.qlf>0?money(it.d.spend/it.d.qlf):'— (sem MQL)', cl=it.d.leads>0?money(it.d.spend/it.d.leads):'—';
+      return `<div class="tt-r"><span class="tdot" style="background:${OV_PAL[it.gi%OV_PAL.length]}"></span><b style="margin-left:0">${esc(nm)}</b></div>
+        ${OV.metric!=='cplq'?`<div class="tt-r">${esc(lm.l)}<b>${ovFmt(it.v)}</b></div>`:''}
+        <div class="tt-r">Custo MQL<b>${cq}</b></div>
+        <div class="tt-r"><span class="sub">CPL ${cl} · gasto ${money(it.d.spend)} · ${int(it.d.leads)} leads · ${int(it.d.qlf)} MQL · ${int(it.d.sales)} vendas</span></div>`; }).join('') : '<div class="tt-r"><span class="sub">sem gasto nesse dia</span></div>'); });
 }
 function ovCrumb(){ const s=OV.sel;
   const p=[`<a class="ov-crumb${s.camp==null?' cur':''}" data-lvl="0">📊 Todas as campanhas</a>`];
@@ -559,6 +568,17 @@ function renderOV(){
   const adG=ovGroup(adRows,2);
   ovTable('ovTAd','Anúncios', S.adset!=null?'do conjunto selecionado':(S.camp!=null?'da campanha selecionada':'todos'), adG,2,avg);
   ovLines(adG,'ovLAd',2);
+  // dia a dia do filtro ativo: custo por MQL de cada dia, sem precisar passar o mouse
+  const dEl=document.getElementById('ovDaily');
+  if(dEl){ const dm=new Map(); for(const r of scope){ let d=dm.get(r.date); if(!d){ d=nodeM(); dm.set(r.date,d); } addM(d,r); }
+    const days=[...dm.entries()].filter(([,d])=>d.spend>0||d.leads>0||d.sales>0).sort((p,q)=>p[0]<q[0]?1:-1);
+    const lab = S.ad!=null?pretty(S.ad):(S.adset!=null?pretty(S.adset):(S.camp!=null?crCampLabel(S.camp):'todas as campanhas'));
+    const row=(dLab,d,cls)=>{ const y=ovM(d); return `<tr class="${cls||''}"><td class="ov-nm">${dLab}</td><td>${money(d.spend)}</td><td>${int(d.leads)}</td><td>${y.cpl!=null?money(y.cpl):'—'}</td><td>${int(d.qlf)}</td><td>${ovPill(y.cplq,avg)}</td><td>${y.txq!=null?pct(y.txq):'—'}</td><td>${int(d.sales)}</td><td>${money(d.revenue)}</td><td>${y.roas!=null?fmtRoas(y.roas):'—'}</td></tr>`; };
+    dEl.innerHTML = `<div class="ov-th"><b>Dia a dia do filtro ativo</b><span>${esc(lab)} · mais recente no topo · custo MQL verde/vermelho comparado à média da conta (${avg!=null?money(avg):'—'})</span></div>` +
+      (days.length ? `<div class="table-scroll ov-scroll"><table class="ov-tbl ov-daily"><thead><tr><th class="ov-nm">Dia</th><th>Investimento</th><th>Leads</th><th>CPL</th><th>MQL</th><th>Custo MQL</th><th>% MQL</th><th>Vendas</th><th>Receita</th><th>ROAS</th></tr></thead><tbody>` +
+        days.map(([dt,d])=>row(`${cxDM(dt)} <span class="sub">${WD[parseD(dt).getDay()]}</span>`,d)).join('') + row('<b>Total do período</b>',a,'ov-tot') + `</tbody></table></div>`
+        : '<div class="ov-empty">Sem dados no período para esse filtro.</div>');
+  }
 }
 
 // ---- sales by campaign ----

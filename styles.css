@@ -642,5 +642,7 @@ ul.quotes li{font-size:13px;color:#33414f;font-style:italic;line-height:1.4}
 .ov-leg.on{border-color:var(--blue2);background:#eaf3fe;font-weight:700}
 .ov-leg i{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
 .ov-empty{color:var(--muted);font-size:12.5px;padding:14px 4px}
+.ov-daily td.ov-nm,.ov-daily th.ov-nm{min-width:90px;max-width:120px}
+.ov-daily tr.ov-tot td{font-weight:800;background:#f2f6fb;border-top:2px solid var(--line)}
 @media(max-width:900px){ .ov-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} }
 @media(max-width:520px){ .ov-kpis{grid-template-columns:repeat(2,minmax(0,1fr))} }
