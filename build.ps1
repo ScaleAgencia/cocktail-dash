@@ -861,9 +861,29 @@ if($Mode -eq 'all' -or $Mode -eq 'datas'){
   $evArr=@()
   foreach($e in $evMap.Values){ $evArr+=[pscustomobject]@{ev=$e.ev;dateKey=$e.dateKey;vendas=$e.vendas;conv=$e.conv;revenue=[math]::Round($e.revenue,2);fat=$e.fat} }
   $evArr=@($evArr | Sort-Object dateKey)
-  $datas=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; meta=30; today=$dmax; events=$evArr }
-  WriteJs 'data-datas.js' 'DASH_DATAS' $datas
-  Write-Host ("DATAS: {0} eventos | faixa de faturamento: {1} compradoras por e-mail + {2} pelo nome" -f $evArr.Count,@($personEv.Keys | Where-Object { $fatByEmail.ContainsKey($_) }).Count,$fatNameHits)
+  # TRAVA do "Investido em trafego" (pedido do cliente, 06/11/2026): o financeiro lanca esse valor, entao no dia do
+  # evento ele congela em datas-travado.json e nao muda mais. Antes disso segue como estimativa no app.js (vagas pagas
+  # x CAC medio de toda a historia). O arquivo so cresce: corrigir um valor = editar o JSON a mao.
+  $lockPath=Join-Path $root 'datas-travado.json'; $lockVals=[ordered]@{}; $lockOk=$false
+  try{ foreach($lp in ([IO.File]::ReadAllText($lockPath,$utf8)|ConvertFrom-Json).PSObject.Properties){ $lockVals[$lp.Name]=$lp.Value }; $lockOk=($lockVals.Count -gt 0) }catch{}
+  if($lockOk){
+    $spendTot=0.0; $salesTot=0.0; foreach($dayRow in $daily.Values){ $spendTot+=$dayRow.spend; $salesTot+=$dayRow.sales }
+    $cacTot=if($salesTot -gt 0){ $spendTot/$salesTot }else{ 0 }
+    $hojeBR=[System.TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTime]::UtcNow,'E. South America Standard Time').ToString('yyyy-MM-dd')
+    # freio: planilha de queries quebrada/vazia daria um CAC absurdo, que ficaria travado para sempre. Nesse caso nao trava e tenta no proximo refresh.
+    $cacRef=[double]$lockVals[$lockVals.Count-1].cac; $cacOk=($cacTot -gt 0 -and [math]::Abs($cacTot/$cacRef-1) -le 0.25); $lockNew=0
+    foreach($ev in $evArr){ if($ev.dateKey -gt $hojeBR -or $lockVals.Contains($ev.dateKey)){ continue }
+      if(-not $cacOk){ Write-Host ("::error::Evento {0} NAO travado: CAC {1:N2} muito longe do ultimo travado ({2:N2}). Conferir a planilha de queries." -f $ev.dateKey,$cacTot,$cacRef); continue }
+      $evPagas=$ev.vendas-$ev.conv; $lockVals[$ev.dateKey]=[pscustomobject]@{inv=[math]::Round($evPagas*$cacTot,2);pagas=$evPagas;cac=[math]::Round($cacTot,2);travadoEm=$hojeBR}; $lockNew++ }
+    if($lockNew){ [IO.File]::WriteAllText($lockPath,($lockVals|ConvertTo-Json -Depth 3),$utf8) }
+    foreach($ev in $evArr){ if($lockVals.Contains($ev.dateKey)){ $ev|Add-Member -NotePropertyName invTravado -NotePropertyValue ([double]$lockVals[$ev.dateKey].inv); $ev|Add-Member -NotePropertyName travadoEm -NotePropertyValue ([string]$lockVals[$ev.dateKey].travadoEm) } }
+    $datas=[pscustomobject]@{ generatedAt=$nowIso; generatedAtBR=$nowBR; meta=30; today=$dmax; events=$evArr }
+    WriteJs 'data-datas.js' 'DASH_DATAS' $datas
+    Write-Host ("DATAS: {0} eventos ({1} travados, {2} novos) | faixa de faturamento: {3} compradoras por e-mail + {4} pelo nome" -f $evArr.Count,$lockVals.Count,$lockNew,@($personEv.Keys | Where-Object { $fatByEmail.ContainsKey($_) }).Count,$fatNameHits)
+  } else {
+    # sem o arquivo os valores voltariam a oscilar na tela: melhor manter o ultimo data-datas.js publicado
+    Write-Host "::error::datas-travado.json ausente ou invalido: aba Datas NAO atualizada."
+  }
 }
 
 # ---- emit (por modo) ----------------------------------------------
