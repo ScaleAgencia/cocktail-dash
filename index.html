@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>Cocktail Cardi Nigro — Funil Meta Ads</title>
 <link rel="stylesheet" href="styles.css">
 <script>document.write('<link rel="stylesheet" href="styles.css?t='+Date.now()+'">');</script>
@@ -237,23 +238,9 @@
           <div class="chart-title">Avaliar as leads</div>
           <div class="ql-sub">✓ é qualificada de verdade, ✗ não é. Clique de novo para desfazer. Tudo salva na hora e aparece para o time todo.</div>
         </div>
-        <div id="qlMe"></div>
+        <label class="ql-me">Quem está marcando <input id="qlWhoIn" list="qlTeam" placeholder="Seu nome" maxlength="40" autocomplete="off"><datalist id="qlTeam"></datalist></label>
       </div>
-      <div class="ql-gate" id="qlGate">
-        <div class="ql-lock" aria-hidden="true">🔒</div>
-        <div class="ql-gate-b">
-          <b>Lista só para o time</b>
-          <p>Nomes, e-mails e telefones são dados pessoais das leads e este site é aberto. Entre com o código do time para ver a lista. Os números acima continuam visíveis para todo mundo.</p>
-          <form id="qlLogin" autocomplete="off">
-            <input id="qlWhoIn" list="qlTeam" placeholder="Seu nome" aria-label="Seu nome" maxlength="40" autocomplete="off">
-            <datalist id="qlTeam"></datalist>
-            <input id="qlCodeIn" type="password" placeholder="Código do time" aria-label="Código do time" autocomplete="off">
-            <button type="submit">Entrar</button>
-          </form>
-          <div class="ql-err" id="qlErr" role="alert"></div>
-        </div>
-      </div>
-      <div class="ql-tools" id="qlTools" hidden>
+      <div class="ql-tools" id="qlTools">
         <div class="ov-seg" id="qlSt" role="group" aria-label="Filtrar por situação"><button data-st="pend" class="on">Faltam <em>0</em></button><button data-st="ok">✓ Reais <em>0</em></button><button data-st="no">✗ Não <em>0</em></button><button data-st="all">Todas <em>0</em></button></div>
         <input id="qlSearch" type="search" placeholder="Buscar por nome ou e-mail" aria-label="Buscar por nome ou e-mail">
         <select id="qlCamp" aria-label="Filtrar por campanha"></select>

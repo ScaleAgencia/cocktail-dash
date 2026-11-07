@@ -719,21 +719,10 @@ ul.quotes li{font-size:13px;color:#33414f;font-style:italic;line-height:1.4}
 .ql-day .b-ok{fill:var(--green)}.ql-day .b-no{fill:var(--red)}.ql-day .b-pend{fill:#cfd6de}
 .ql-bars .objrow{grid-template-columns:128px 1fr 78px;margin-bottom:7px}
 .ql-t2{margin-top:16px}
-.ql-gate{display:flex;gap:14px;align-items:flex-start;padding:16px;border:1px dashed #c7d3df;border-radius:12px;background:#f7f9fb}
-.ql-gate[hidden],.ql-tools[hidden]{display:none}
-.ql-lock{font-size:26px;line-height:1.1}
-.ql-gate-b{min-width:0;flex:1}
-.ql-gate-b p{margin:3px 0 11px;color:#41505e;font-size:13px;max-width:640px}
-.ql-gate form{display:flex;flex-wrap:wrap;gap:8px}
-.ql-gate form[hidden]{display:none}
-.ql-gate input,.ql-tools input,.ql-tools select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;background:#fff;color:var(--ink);min-width:0}
-.ql-gate input{flex:1 1 170px;max-width:240px}
-.ql-gate button{border:0;border-radius:8px;background:var(--blue2);color:#fff;font-weight:700;padding:8px 18px;font-size:13px;cursor:pointer}
-.ql-gate button:disabled{opacity:.6;cursor:default}
-.ql-err{color:#c0392b;font-size:12.5px;margin-top:7px;min-height:1em}
-.ql-me{font-size:12.5px;color:#41505e;white-space:nowrap}
-.ql-me a{color:var(--blue2)}
+.ql-me{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:#41505e;white-space:nowrap}
+.ql-me input{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px;width:150px;background:#fff;color:var(--ink)}
 .ql-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.ql-tools input,.ql-tools select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;background:#fff;color:var(--ink);min-width:0}
 .ql-tools input{flex:1 1 210px}
 .ql-tools select{flex:0 1 auto;max-width:260px}
 #qlSt em{font-style:normal;opacity:.75;font-weight:700;margin-left:3px;font-variant-numeric:tabular-nums}
@@ -743,7 +732,6 @@ ul.quotes li{font-size:13px;color:#33414f;font-style:italic;line-height:1.4}
 .ql-row.st-1{border-left-color:var(--red);background:#fff6f5}
 .ql-name{font-weight:700;font-size:14px;text-transform:capitalize;overflow-wrap:anywhere}
 .ql-mail{font-size:12.5px;color:#41505e;overflow-wrap:anywhere;margin-top:1px}
-.ql-wa{color:#1f7a30;font-weight:600;white-space:nowrap;margin-left:5px}
 .ql-info{min-width:0;font-size:12px;color:#41505e}
 .ql-fat{display:inline-block;font-weight:700;color:var(--navy);background:#eaf3fc;border-radius:999px;padding:1px 8px;margin-right:6px}
 .ql-dt{color:var(--muted)}
@@ -768,5 +756,5 @@ ul.quotes li{font-size:13px;color:#33414f;font-style:italic;line-height:1.4}
 .ql-total{padding:4px}
 @media(max-width:1100px){ .ql-tiles{grid-template-columns:repeat(3,minmax(0,1fr))} }
 @media(max-width:900px){ .ql-two{grid-template-columns:minmax(0,1fr)} .ql-hero{grid-template-columns:minmax(0,1fr);justify-items:center;padding:20px 16px;gap:14px} .ql-h-main{width:100%} .ql-gauge{width:170px;height:170px} .ql-g-c b{font-size:31px} .ql-legnote{margin-left:0} }
-@media(max-width:700px){ .ql-hl{grid-template-columns:minmax(0,1fr)} .ql-row{grid-template-columns:minmax(0,1fr)} .ql-act{grid-template-columns:1fr 1fr} .ql-btn{height:44px} .ql-tools input,.ql-tools select{flex:1 1 100%;max-width:none} #qlSt{width:100%} #qlSt button{flex:1;padding:8px 4px} .ql-gate{flex-direction:column} .ql-gate input{max-width:none;flex:1 1 100%} .ql-gate button{flex:1 1 100%} .ql-tile b{font-size:15.5px} .ql-me{white-space:normal} }
+@media(max-width:700px){ .ql-hl{grid-template-columns:minmax(0,1fr)} .ql-row{grid-template-columns:minmax(0,1fr)} .ql-act{grid-template-columns:1fr 1fr} .ql-btn{height:44px} .ql-tools input,.ql-tools select{flex:1 1 100%;max-width:none} #qlSt{width:100%} #qlSt button{flex:1;padding:8px 4px} .ql-tile b{font-size:15.5px} .ql-me{width:100%} .ql-me input{flex:1;width:auto} }
 @media(max-width:420px){ .ql-tiles{grid-template-columns:repeat(2,minmax(0,1fr))} }

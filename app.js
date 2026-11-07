@@ -1707,7 +1707,7 @@ function buildPresets(){
 // ===================== Qualificação Comercial =====================
 // O comercial marca se cada MQL é mesmo qualificada e a dash recalcula sozinha, inclusive as colunas "real" da aba Funil.
 // Site e repositório são públicos, então nada de dado pessoal vem do build: data-qual.js traz 1 linha por MQL com um código
-// derivado do e-mail. Marcações e nomes/e-mails ficam no backend (qual-backend/Code.gs); nomes e e-mails só com o código do time.
+// derivado do e-mail. Marcações e nomes/e-mails ficam no backend (qual-backend/Code.gs). Lista aberta para quem tem o link, por decisão do cliente (07/11/2026).
 const QD = window.DASH_QUAL || null;
 const QUAL_API = location.hostname==='localhost' ? '/__qual' : 'https://script.google.com/macros/s/AKfycby_CCF9BctQJeblE6AcS9iF4iolGMkiTNlHQXl0hkiFFldHrZW61d1HKejstje-b3OyGQ/exec';   // app da web publicado de qual-backend/Code.gs
 const QL_REASONS=['Sem perfil','Sem dinheiro','Sem data','Não responde','Contato inválido'];
@@ -1719,7 +1719,7 @@ const QL_ROWS=(()=>{ if(!QD) return [];
   const dm=new Map(); D.daily.forEach(r=>dm.set(r.date,r));
   return arr(QD.rows).map(r=>{ const date=QD.days[r[1]], camp=QD.camps[r[2]], adset=QD.sets[r[3]], ad=QD.ads[r[4]];
     return {id:r[0],date,camp,adset,ad,fat:QD.fats[r[5]],g:gm.get(qlKey(date,camp,adset,ad))||null,d:dm.get(date)||null}; }); })();
-const QL={ marks:{}, v:'', pending:new Map(), inflight:false, fetching:false, map:null, mapState:'idle', mapErr:'', code:'', who:'', st:QUAL_API?'wait':'noapi', lastOk:0, ackAt:0, timer:0, funilDirty:false,
+const QL={ marks:{}, v:'', pending:new Map(), inflight:false, fetching:false, map:null, mapState:'idle', mapErr:'', who:'', st:QUAL_API?'wait':'noapi', lastOk:0, ackAt:0, timer:0, funilDirty:false,
   f:{st:'pend',q:'',camp:'',sort:'new'}, lvl:0, sort:{k:'ok',rev:false}, shown:QL_PAGE, sticky:new Set(), flushT:0 };
 const qlLS={ get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }, del(k){ try{ localStorage.removeItem(k); }catch(e){} } };
 
@@ -1735,7 +1735,6 @@ const qlAgo=ts=>{ if(!ts) return ''; const s=Math.max(0,Math.round(Date.now()/10
 // nome curto da campanha: o que vem depois da data + a data ("TOP ADS · SP · 29/10"); o prefixo "ALL FRIO | CONV | CBO" se repete em todas
 const qlCamp=c=>{ const p=String(c).split('|').map(s=>s.trim()).filter(Boolean), i=p.findIndex(s=>/^\d{2}\/\d{2}\/\d{4}$/.test(s)); if(i<0||i===p.length-1) return crCampLabel(c); return p.slice(i+1).join(' · ')+' · '+p[i].slice(0,5); };
 const qlFatLabel=raw=>{ const t=String(raw==null?'':raw).replace(/_/g,' ').trim(); if(!t) return ''; return (PQ_DEF.fat.map&&PQ_DEF.fat.map[nkey(t)])||cap1(t); };
-const qlWa=t=>{ let d=String(t||'').replace(/\D/g,''); if(d.length<10) return ''; if(d.length<=11) d='55'+d; return 'https://wa.me/'+d; };
 
 // ---- conversa com o backend ----
 async function qlPost(body,ms){ const ctl=new AbortController(), to=setTimeout(()=>ctl.abort(),ms||60000);
@@ -1754,30 +1753,28 @@ function qlTick(){ clearTimeout(QL.timer); const pq=document.getElementById('pag
   QL.timer=setTimeout(qlTick,onQ?QL_POLL_TAB:(onF?QL_POLL_FUNIL:QL_POLL_IDLE)); }
 function qlSavePending(){ if(QL.pending.size) qlLS.set('ccn_qual_pending',JSON.stringify([...QL.pending.entries()])); else qlLS.del('ccn_qual_pending'); }
 function qlFlushSoon(ms){ clearTimeout(QL.flushT); QL.flushT=setTimeout(qlFlush,ms==null?250:ms); }
-async function qlFlush(){ if(QL.inflight||!QL.pending.size||!QL.code||!QUAL_API) return; QL.inflight=true; qlLive();
+const qlWho=()=>QL.who||'Comercial';
+async function qlFlush(){ if(QL.inflight||!QL.pending.size||!QUAL_API) return; QL.inflight=true; qlLive();
   const items=[...QL.pending.entries()].slice(0,100).map(([id,p])=>{ const r=QL_ROWS.find(x=>x.id===id)||{}, lead=(QL.map&&QL.map[id])||[];
-    return {id,s:p.s,r:p.r||'',d:r.date||'',n:lead[0]||'',e:lead[1]||'',t:lead[2]||'',f:qlFatLabel(r.fat),c:r.camp||'',ss:r.adset||'',ad:r.ad||''}; });
+    return {id,s:p.s,r:p.r||'',d:r.date||'',n:lead[0]||'',e:lead[1]||'',f:qlFatLabel(r.fat),c:r.camp||'',ss:r.adset||'',ad:r.ad||''}; });
   let retry=0;
-  try{ const j=await qlPost({a:'mark',code:QL.code,who:QL.who,items});
+  try{ const j=await qlPost({a:'mark',who:qlWho(),items});
     if(j.ok){ const now=Math.floor(Date.now()/1000);
-      for(const it of items){ if(it.s) QL.marks[it.id]=[it.s,it.r,QL.who,now]; else delete QL.marks[it.id];
+      for(const it of items){ if(it.s) QL.marks[it.id]=[it.s,it.r,qlWho(),now]; else delete QL.marks[it.id];
         const cur=QL.pending.get(it.id); if(cur&&cur.s===it.s&&(cur.r||'')===it.r) QL.pending.delete(it.id); }   // se ela mudou de ideia no meio do envio, a nova marcação segue na fila
       QL.ackAt=Date.now(); QL.st='live'; QL.lastOk=Date.now(); qlSavePending();
-    } else if(j.err==='codigo'){ qlLogout('O código do time mudou. Digite o novo para continuar.'); }
-    else { retry=4000; }
+    } else { retry=4000; }
   }catch(e){ QL.st='off'; retry=5000; }
-  finally{ QL.inflight=false; qlLive(); if(QL.pending.size&&QL.code) qlFlushSoon(retry||50); else if(!retry) qlFetch(); } }
+  finally{ QL.inflight=false; qlLive(); if(QL.pending.size) qlFlushSoon(retry||50); else if(!retry) qlFetch(); } }
 function qlSet(id,s,r){ QL.pending.set(id,{s,r:r||''}); QL.sticky.add(id); qlSavePending(); qlChanged(); qlFlushSoon(); }
-async function qlLoadMap(fresh){ if(!QUAL_API||!QL.code||QL.mapState==='loading') return; QL.mapState='loading'; QL.mapErr=''; qlRenderList();
-  try{ const j=await qlPost({a:'list',code:QL.code,fresh:!!fresh},240000);
+async function qlLoadMap(fresh){ if(!QUAL_API||QL.mapState==='loading') return; QL.mapState='loading'; QL.mapErr=''; qlRenderList();
+  try{ const j=await qlPost({a:'list',fresh:!!fresh},240000);
     if(j.ok){ QL.map=j.map||{}; QL.mapState='ok';
       const faltam=!fresh && QL_ROWS.some(r=>!QL.map[r.id]);
       if(faltam && Date.now()-(j.at||0)>300000){ QL.mapState='idle'; return qlLoadMap(true); }   // lead nova desde a última leitura
-    } else if(j.err==='codigo'){ QL.mapState='idle'; qlLogout('O código do time mudou. Digite o novo para continuar.'); return; }
-    else { QL.mapState='err'; QL.mapErr=j.err||'erro'; }
+    } else { QL.mapState='err'; QL.mapErr=j.err||'erro'; }
   }catch(e){ QL.mapState='err'; QL.mapErr=e.name==='AbortError'?'demorou demais':'sem conexão'; }
   qlRenderList(); qlFlushSoon(0); }
-function qlLogout(msg){ QL.code=''; QL.map=null; QL.mapState='idle'; qlLS.del('ccn_qual_code'); qlRenderList(); const er=document.getElementById('qlErr'); if(er) er.textContent=msg||''; }
 
 // ---- atualização da tela ----
 function qlChanged(){ qlApply(); const pq=document.getElementById('pageQual'), pf=document.getElementById('pageFunnel');
@@ -1837,7 +1834,7 @@ function qlRenderRank(){ const elT=document.getElementById('qlRank'), elH=docume
       <td class="ql-okv">${int(o.ok)}</td><td>${int(o.no)}</td><td>${int(o.pend)}</td><td>${int(o.qlf)}</td><td>${o.rate!=null?`<b>${pct(o.rate)}</b>`:'—'}</td><td>${o.custo!=null?money(o.custo):'—'}</td><td>${o.real!=null?money(o.real):'—'}</td></tr>`; }).join('');
   elT.innerHTML=`<thead>${head}</thead><tbody>${body||`<tr><td colspan="9" class="sub">Sem MQL no período.</td></tr>`}</tbody>`;
   elT.querySelectorAll('th.ql-sort').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(QL.sort.k===k) QL.sort.rev=!QL.sort.rev; else QL.sort={k,rev:false}; qlRenderRank(); });
-  if(QL.lvl===0) elT.querySelectorAll('tr.ql-r').forEach(tr=>tr.onclick=()=>{ const o=list[+tr.dataset.i]; if(!o) return; QL.f.camp=QL.f.camp===o.camp?'':o.camp; const sel=document.getElementById('qlCamp'); if(sel) sel.value=QL.f.camp; QL.sticky.clear(); QL.shown=QL_PAGE; qlRenderRank(); qlRenderList(); if(QL.f.camp&&QL.code){ const card=document.getElementById('qlListCard'); if(card) card.scrollIntoView({behavior:'smooth',block:'start'}); } }); }
+  if(QL.lvl===0) elT.querySelectorAll('tr.ql-r').forEach(tr=>tr.onclick=()=>{ const o=list[+tr.dataset.i]; if(!o) return; QL.f.camp=QL.f.camp===o.camp?'':o.camp; const sel=document.getElementById('qlCamp'); if(sel) sel.value=QL.f.camp; QL.sticky.clear(); QL.shown=QL_PAGE; qlRenderRank(); qlRenderList(); if(QL.f.camp){ const card=document.getElementById('qlListCard'); if(card) card.scrollIntoView({behavior:'smooth',block:'start'}); } }); }
 function qlRenderDay(){ const el=document.getElementById('qlDay'); if(!el) return; const mp=new Map();
   for(const r of qlPeriod()){ let o=mp.get(r.date); if(!o){ o={ok:0,no:0,pend:0}; mp.set(r.date,o); } const s=qlStatus(r.id); if(s>0) o.ok++; else if(s<0) o.no++; else o.pend++; }
   const days=[...mp.keys()].sort(), n=days.length; if(!n){ el.innerHTML='<div class="ov-empty">Sem MQL no período.</div>'; return; }
@@ -1861,11 +1858,11 @@ function qlRenderWhy(){ const elW=document.getElementById('qlWhy'), elB=document
   elB.innerHTML=nEv?bars([...by.entries()].sort((a,b)=>(b[1].ok+b[1].no)-(a[1].ok+a[1].no)).map(([label,b])=>({label,n:b.ok+b.no,pct:(b.ok+b.no)/nEv*100})),'var(--blue2)'):'<div class="sub">Ninguém avaliou neste período ainda.</div>'; }
 
 // ---- lista para o comercial marcar ----
-function qlRowHTML(r){ const s=qlStatus(r.id), lead=(QL.map&&QL.map[r.id])||null, mk=QL.marks[r.id], pend=QL.pending.has(r.id), why=qlReason(r.id), wa=lead?qlWa(lead[2]):'';
+function qlRowHTML(r){ const s=qlStatus(r.id), lead=(QL.map&&QL.map[r.id])||null, mk=QL.marks[r.id], pend=QL.pending.has(r.id), why=qlReason(r.id);
   const by=s?(pend?'salvando…':`${esc(mk&&mk[2]||'')}${mk&&mk[3]?' · '+qlAgo(mk[3]):''}`):'';
   const fat=qlFatLabel(r.fat);
   return `<div class="ql-row st${s}" data-id="${esc(r.id)}">
-    <div class="ql-lead"><div class="ql-name">${lead?esc(lead[0]||'(sem nome)'):'…'}</div><div class="ql-mail">${lead?esc(lead[1]):''}${wa?` <a class="ql-wa" href="${esc(wa)}" target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp">WhatsApp</a>`:''}</div></div>
+    <div class="ql-lead"><div class="ql-name">${lead?esc(lead[0]||'(sem nome)'):'…'}</div><div class="ql-mail">${lead?esc(lead[1]):''}</div></div>
     <div class="ql-info">${fat?`<span class="ql-fat">${esc(fat)}</span>`:''}<span class="ql-dt">${cxDM(r.date)}</span><div class="ql-src" title="${esc(r.camp)} › ${esc(r.adset)} › ${esc(r.ad)}">${esc(qlCamp(r.camp))} › ${esc(pretty(r.ad))}</div></div>
     <div class="ql-act"><button type="button" class="ql-btn yes${s>0?' on':''}" data-act="yes" aria-pressed="${s>0}" aria-label="Qualificada" title="Qualificada de verdade">✓</button><button type="button" class="ql-btn nop${s<0?' on':''}" data-act="no" aria-pressed="${s<0}" aria-label="Não qualificada" title="Não é qualificada">✗</button><div class="ql-by">${by}</div></div>
     ${s<0?`<div class="ql-reasons"><span>Motivo:</span>${QL_REASONS.map(x=>`<button type="button" class="ql-chip${why===x?' on':''}" data-act="why" data-r="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}
@@ -1878,12 +1875,7 @@ function qlFiltered(){ const f=QL.f, q=nkey(f.q), rows=qlPeriod().filter(r=>{ if
   return rows.sort((a,b)=>f.sort==='old'?(a.date<b.date?-1:(a.date>b.date?1:0)):(a.date<b.date?1:(a.date>b.date?-1:0))); }
 function qlSegCounts(){ const rows=qlPeriod().filter(r=>!QL.f.camp||r.camp===QL.f.camp), a=qlAgg(rows), c={pend:a.pend,ok:a.ok,no:a.no,all:a.qlf};
   document.querySelectorAll('#qlSt button').forEach(b=>{ b.classList.toggle('on',b.dataset.st===QL.f.st); const em=b.querySelector('em'); if(em) em.textContent=int(c[b.dataset.st]); }); }
-function qlRenderList(){ const gate=document.getElementById('qlGate'), tools=document.getElementById('qlTools'), box=document.getElementById('qlRows'), more=document.getElementById('qlMore'), me=document.getElementById('qlMe'); if(!box) return;
-  const logged=!!QL.code; gate.hidden=logged; tools.hidden=!logged;
-  if(!QUAL_API){ gate.hidden=false; gate.querySelector('form').hidden=true; gate.querySelector('p').textContent='A conexão com o comercial está sendo ativada. A lista aparece aqui assim que ela estiver pronta.'; box.innerHTML=''; more.innerHTML=''; me.innerHTML=''; return; }
-  if(!logged){ box.innerHTML=''; more.innerHTML=''; me.innerHTML=''; const w=document.getElementById('qlWhoIn'); if(w&&!w.value) w.value=QL.who||''; return; }
-  me.innerHTML=`<span class="ql-me">Marcando como <b>${esc(QL.who)}</b> · <a href="#" id="qlOut">sair</a></span>`;
-  document.getElementById('qlOut').onclick=e=>{ e.preventDefault(); qlLogout(''); };
+function qlRenderList(){ const box=document.getElementById('qlRows'), more=document.getElementById('qlMore'); if(!box) return;
   const sel=document.getElementById('qlCamp');
   if(sel){ const cs=[...new Set(qlPeriod().map(r=>r.camp))].sort((a,b)=>qlCamp(a).localeCompare(qlCamp(b),'pt-BR')); if(QL.f.camp&&!cs.includes(QL.f.camp)) QL.f.camp='';
     sel.innerHTML='<option value="">Todas as campanhas</option>'+cs.map(c=>`<option value="${esc(c)}">${esc(qlCamp(c))}</option>`).join(''); sel.value=QL.f.camp; }
@@ -1895,20 +1887,15 @@ function qlRenderList(){ const gate=document.getElementById('qlGate'), tools=doc
   box.innerHTML=shown.length?shown.map(qlRowHTML).join(''):`<div class="ql-note">${QL.f.st==='pend'&&!QL.f.q?'🎉 Nenhuma lead pendente neste filtro.':'Nenhuma lead neste filtro.'}</div>`;
   more.innerHTML=rows.length>QL.shown?`<button type="button" class="ql-more" id="qlMoreBtn">Mostrar mais ${int(Math.min(QL_PAGE,rows.length-QL.shown))} <span class="sub">(${int(QL.shown)} de ${int(rows.length)})</span></button>`:(rows.length?`<div class="sub ql-total">${int(rows.length)} ${rows.length===1?'lead':'leads'} neste filtro</div>`:'');
   const mb=document.getElementById('qlMoreBtn'); if(mb) mb.onclick=()=>{ QL.shown+=QL_PAGE; qlRenderList(); }; }
-function qlPatchRows(){ const box=document.getElementById('qlRows'); if(!box||!QL.code||!QL.map) return; const act=document.activeElement, keep=act&&act.dataset&&act.closest('.ql-row')?{id:act.closest('.ql-row').dataset.id,a:act.dataset.act,r:act.dataset.r}:null;
+function qlPatchRows(){ const box=document.getElementById('qlRows'); if(!box||!QL.map) return; const act=document.activeElement, keep=act&&act.dataset&&act.closest('.ql-row')?{id:act.closest('.ql-row').dataset.id,a:act.dataset.act,r:act.dataset.r}:null;
   const byId=new Map(); QL_ROWS.forEach(r=>{ if(!byId.has(r.id)) byId.set(r.id,r); });
   box.querySelectorAll('.ql-row').forEach(el=>{ const r=byId.get(el.dataset.id); if(!r) return; const t=document.createElement('div'); t.innerHTML=qlRowHTML(r); const nw=t.firstElementChild; if(nw&&!nw.isEqualNode(el)) el.replaceWith(nw); });
   if(keep){ const row=box.querySelector(`.ql-row[data-id="${keep.id}"]`); const b=row&&row.querySelector(keep.r?`[data-act="${keep.a}"][data-r="${keep.r}"]`:`[data-act="${keep.a}"]`); if(b) b.focus({preventScroll:true}); } }
 function qlInit(){
   const pend=qlLS.get('ccn_qual_pending'); if(pend){ try{ JSON.parse(pend).forEach(([id,p])=>QL.pending.set(id,p)); }catch(e){} }
-  QL.who=qlLS.get('ccn_qual_who')||''; QL.code=qlLS.get('ccn_qual_code')||''; qlApply();
+  QL.who=qlLS.get('ccn_qual_who')||''; qlLS.del('ccn_qual_code'); qlApply();
   const dl=document.getElementById('qlTeam'); if(dl) dl.innerHTML=QL_TEAM.map(n=>`<option value="${esc(n)}"></option>`).join('');
-  const form=document.getElementById('qlLogin');
-  if(form) form.onsubmit=async e=>{ e.preventDefault(); const who=document.getElementById('qlWhoIn').value.trim(), code=document.getElementById('qlCodeIn').value.trim(), er=document.getElementById('qlErr'), btn=form.querySelector('button');
-    if(!who){ er.textContent='Coloque seu nome: ele aparece em cada marcação.'; return; } if(!code){ er.textContent='Digite o código do time.'; return; }
-    er.textContent=''; btn.disabled=true; btn.textContent='Entrando…';
-    try{ const j=await qlPost({a:'login',code}); if(j.ok){ QL.who=who; QL.code=code; qlLS.set('ccn_qual_who',who); qlLS.set('ccn_qual_code',code); document.getElementById('qlCodeIn').value=''; qlRenderList(); } else er.textContent=j.err==='codigo'?'Código incorreto.':'Não consegui entrar agora. Tente de novo.'; }
-    catch(err){ er.textContent='Sem conexão. Tente de novo.'; } finally{ btn.disabled=false; btn.textContent='Entrar'; } };
+  const wi=document.getElementById('qlWhoIn'); if(wi){ wi.value=QL.who; wi.oninput=()=>{ QL.who=wi.value.trim(); if(QL.who) qlLS.set('ccn_qual_who',QL.who); else qlLS.del('ccn_qual_who'); }; }
   document.querySelectorAll('#qlLvl button').forEach(b=>b.onclick=()=>{ QL.lvl=+b.dataset.l; QL.sort={k:'ok',rev:false}; qlRenderRank(); });
   const refilter=()=>{ QL.sticky.clear(); QL.shown=QL_PAGE; qlRenderList(); };
   document.querySelectorAll('#qlSt button').forEach(b=>b.onclick=()=>{ QL.f.st=b.dataset.st; refilter(); });
@@ -1921,7 +1908,7 @@ function qlInit(){
   document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') qlTick(); });
   window.addEventListener('online',()=>{ qlFlushSoon(0); qlTick(); });
   setInterval(()=>{ const pq=document.getElementById('pageQual'); if(pq&&!pq.hidden) qlLive(); },1000);
-  qlTick(); if(QL.pending.size&&QL.code) qlFlushSoon(800);
+  qlTick(); if(QL.pending.size) qlFlushSoon(800);
 }
 function init(){
   document.getElementById('updated').textContent = 'Atualizado: '+D.generatedAtBR;
