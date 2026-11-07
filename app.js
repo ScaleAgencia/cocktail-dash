@@ -48,7 +48,7 @@ let state = { start:null, end:null, level:'campaign', sort:{key:'qlf',asc:false}
 const isFormsCamp = c => String(c).split('|').some(s=>s.trim().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase()==='forms');
 const FORMS_LD = new Map(); for(const r of D.grain){ if(r.leads && isFormsCamp(r.campaign)) FORMS_LD.set(r.date,(FORMS_LD.get(r.date)||0)+r.leads); }
 function sumDaily(start,end){
-  const o={spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,fleads:0};
+  const o={spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,fleads:0,rok:0,rno:0};   // rok/rno = qualificadas reais confirmadas/reprovadas pelo comercial (qlApply)
   for(const r of D.daily){ if(r.date>=start && r.date<=end){ for(const k in o) o[k]+=r[k]||0; o.fleads+=FORMS_LD.get(r.date)||0; } }
   return o;
 }
@@ -62,6 +62,12 @@ function metrics(a){
     cac:safe(a.spend,a.sales), roas:safe(a.revenue,a.spend), ticket:safe(a.revenue,a.sales)
   };
 }
+// Qualificação real: das MQL que o comercial já avaliou, quantas ele confirmou. Quem ainda não foi avaliada fica fora da conta.
+// Custo MQL real = custo MQL ÷ taxa real: não infla enquanto só parte da base foi avaliada e fica igual a gasto ÷ confirmadas quando todas forem.
+function realM(m){ const ok=m.rok||0, no=m.rno||0, ev=ok+no, rate=ev>0?ok/ev*100:null;
+  return {ok,no,ev,rate,cost:(rate>0&&m.qlf>0)?m.spend/m.qlf/(rate/100):null}; }
+function realPct(m){ const x=realM(m); return x.ev ? `<span title="${int(x.ok)} confirmadas de ${int(x.ev)} avaliadas · ${int(m.qlf)} MQL no total">${pct(x.rate)}</span>` : '<span title="nenhuma avaliada ainda">—</span>'; }
+function realCost(m){ const x=realM(m); return x.cost!=null ? `<span title="custo MQL ÷ taxa real">${money(x.cost)}</span>` : '—'; }
 function groupGrain(start,end,level){
   const map=new Map();
   for(const r of D.grain){
@@ -296,7 +302,7 @@ function renderApIssues(){
 
 // ---- funnel ----
 function renderFunnel(cur,prev){
-  const c=metrics(cur), p=metrics(prev);
+  const c=metrics(cur), p=metrics(prev), rc=realM(cur), rp=realM(prev);
   const rows=[
     {label:'Impressões', val:int(c.impr), sk:'CPM', sv:money(c.cpm), rl:'CTR', rv:pct(c.ctr), d:deltaHTML(c.ctr,p.ctr)},
     {label:'Link Clicks', val:int(c.clicks), sk:'CPC', sv:money(c.cpc), rl:'CR (clique → LP)', rv:pct(c.cr), d:deltaHTML(c.cr,p.cr)},
@@ -305,6 +311,8 @@ function renderFunnel(cur,prev){
     {label:'Leads Qualificados', val:int(c.qlf), sk:'CPL QLF', sv:money(c.cplqlf), rl:'Conversão p/ venda', rv:pct(c.txvenda), d:deltaHTML(c.txvenda,p.txvenda),
        x2:`Taxa de qualificação: <b>${pct(c.txqual)}</b> <span class="sub">(${int(c.qlf)} qualif. de ${int(c.leads)} leads)</span> ${deltaHTML(c.txqual,p.txqual)}`,
        hl:true, target:{val:c.cplqlf,max:TARGET_CPL_QLF,label:`meta R$ ${nf0.format(TARGET_CPL_QLF)}`}, sd:deltaHTML(c.cplqlf,p.cplqlf,false)},
+    {label:'Qualificadas reais', val:int(rc.ok), sk:'Custo MQL real', sv:rc.cost!=null?money(rc.cost):'—', rl:'Avaliadas pelo comercial', rv:`${pct(safe(rc.ev,c.qlf)*100)} <span class="sub">(${int(rc.ev)} de ${int(c.qlf)})</span>`, d:'',
+       x2:`Taxa de qualificação real: <b>${pct(rc.rate||0)}</b> ${rc.rate!=null&&rp.rate!=null?deltaHTML(rc.rate,rp.rate):''}`, hl:true},
     {label:'Vendas', val:int(c.sales), sk:'CAC', sv:money(c.cac), rl:'ROAS', rv:(c.roas).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'x', d:deltaHTML(c.roas,p.roas),
        hl:true, target:{val:c.cac,max:TARGET_CAC,label:`meta R$ ${nf0.format(TARGET_CAC)}`}, sd:deltaHTML(c.cac,p.cac,false)}
   ];
@@ -336,8 +344,8 @@ function renderInvest(cur){
 
 // ---- optimization table ----
 const expanded = new Set();
-function nodeM(){ return {spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,fleads:0}; }
-function addM(o,r){ o.spend+=r.spend;o.impr+=r.impr;o.clicks+=r.clicks;o.lpv+=r.lpv;o.leads+=r.leads;o.qlf+=r.qlf;o.sales+=r.sales;o.revenue+=r.revenue;
+function nodeM(){ return {spend:0,impr:0,clicks:0,lpv:0,leads:0,qlf:0,sales:0,revenue:0,fleads:0,rok:0,rno:0}; }
+function addM(o,r){ o.spend+=r.spend;o.impr+=r.impr;o.clicks+=r.clicks;o.lpv+=r.lpv;o.leads+=r.leads;o.qlf+=r.qlf;o.sales+=r.sales;o.revenue+=r.revenue;o.rok+=r.rok||0;o.rno+=r.rno||0;
   if(r.leads && isFormsCamp(r.campaign)) o.fleads+=r.leads; }
 function buildTree(start,end){
   const camps=new Map();
@@ -375,6 +383,9 @@ function treeRow(node,level,hasKids){
     <td>${m.leads>0?pct(txq):'—'}</td>
     <td>${int(m.qlf)}</td>
     <td>${cplPill(cplqlf,m.qlf)}</td>
+    <td>${int(m.rok)}</td>
+    <td>${realPct(m)}</td>
+    <td>${realCost(m)}</td>
     <td>${m.qlf>0?pct(txv):'—'}</td>
     <td>${int(m.sales)}</td>
     <td>${m.sales>0?money(cac):'—'}</td>
@@ -389,7 +400,7 @@ function cplPill(v,qlf){
 }
 function renderTable(){
   const tree=buildTree(state.start,state.end);
-  document.querySelector('#optTable thead').innerHTML='<tr><th class="tlabel">Campanha › Conjunto › Anúncio</th><th>Gasto</th><th>Impressões</th><th>CPM</th><th>CTR</th><th>Cliques</th><th>CPC</th><th>Connect</th><th>Page Views</th><th>Conv. LP</th><th>Leads</th><th>CPL</th><th>% Qualif</th><th>QLF</th><th>CPL QLF</th><th>Conv. Venda</th><th>Vendas</th><th>CAC</th><th>Receita</th><th>ROAS</th><th>Ticket</th></tr>';
+  document.querySelector('#optTable thead').innerHTML='<tr><th class="tlabel">Campanha › Conjunto › Anúncio</th><th>Gasto</th><th>Impressões</th><th>CPM</th><th>CTR</th><th>Cliques</th><th>CPC</th><th>Connect</th><th>Page Views</th><th>Conv. LP</th><th>Leads</th><th>CPL</th><th>% Qualif</th><th>QLF</th><th>CPL QLF</th><th title="Confirmadas pelo comercial na aba Qualificação Comercial">QLF real</th><th title="Confirmadas ÷ avaliadas pelo comercial">% real</th><th title="CPL QLF ÷ taxa real">CPL QLF real</th><th>Conv. Venda</th><th>Vendas</th><th>CAC</th><th>Receita</th><th>ROAS</th><th>Ticket</th></tr>';
   let rows='';
   for(const c of tree){ rows+=treeRow(c,0,c.kidsArr.length>0);
     if(expanded.has(c.key)) for(const a of c.kidsArr){ rows+=treeRow(a,1,a.kidsArr.length>0);
@@ -404,19 +415,22 @@ function renderTable(){
 // (top 8 por verba; com item selecionado no nível, só a linha dele). Linhas: Custo MQL, CPL, MQL, Leads, Vendas ou Investimento.
 const OV = { sel:{camp:null,adset:null,ad:null}, metric:'cplq', sort:{0:{k:'spend',rev:false},1:{k:'spend',rev:false},2:{k:'spend',rev:false}} };
 const OV_PAL=['#0f5ba8','#e9a23b','#2e9e3f','#d4544a','#9b59b6','#4aa3e8','#5b6b7b','#c06d1f'];
-const OV_LM=[{k:'cplq',l:'Custo MQL',cost:true},{k:'cpl',l:'CPL',cost:true},{k:'qlf',l:'MQL'},{k:'leads',l:'Leads'},{k:'sales',l:'Vendas'},{k:'spend',l:'Investimento',money:true}];
+const OV_LM=[{k:'cplq',l:'Custo MQL',cost:true},{k:'cpl',l:'CPL',cost:true},{k:'qlf',l:'MQL'},{k:'txreal',l:'% real',pct:true},{k:'leads',l:'Leads'},{k:'sales',l:'Vendas'},{k:'spend',l:'Investimento',money:true}];
 const crSeg = c => { const p=String(c).split('|').map(s=>s.trim()).filter(Boolean); return p.length?p[p.length-1]:String(c); };
 const crCampLabel = c => { const dt=(String(c).match(/(\d{2})\/(\d{2})\/\d{4}/)||[]); return pretty(crSeg(c))+(dt[1]?` · ${dt[1]}/${dt[2]}`:''); };
 const ovLM = () => OV_LM.find(x=>x.k===OV.metric)||OV_LM[0];
 function ovVal(d,k){ k=k||OV.metric;
   if(k==='cplq') return d.qlf>0?d.spend/d.qlf:null;
   if(k==='cpl') return d.leads>0?d.spend/d.leads:null;
+  if(k==='txreal') return realM(d).rate;
   return d[k==='rev'?'revenue':k]; }
 function ovFmt(v,k){ k=k||OV.metric; if(v==null) return '—'; const lm=OV_LM.find(x=>x.k===k);
+  if(lm&&lm.pct) return pct(v);
   return (lm&&(lm.cost||lm.money)) ? money(v) : int(v); }
-function ovAx(v){ const lm=ovLM(); return (lm.cost||lm.money) ? (v>=1000?`R$ ${n1(v/1000)}k`:`R$ ${int(v)}`) : n1(v); }
+function ovAx(v){ const lm=ovLM(); if(lm.pct) return `${Math.round(v)}%`; return (lm.cost||lm.money) ? (v>=1000?`R$ ${n1(v/1000)}k`:`R$ ${int(v)}`) : n1(v); }
 function ovM(n){ const pl=n.leads-(n.fleads||0); return {
   cpl:n.leads>0?n.spend/n.leads:null, cplq:n.qlf>0?n.spend/n.qlf:null, txq:n.leads>0?n.qlf/n.leads*100:null,
+  txreal:realM(n).rate, cplreal:realM(n).cost,
   cac:(n.sales>0&&n.spend>0)?n.spend/n.sales:null, roas:n.spend>0?n.revenue/n.spend:null,
   cpm:n.impr>0?n.spend/n.impr*1000:null, ctr:n.impr>0?n.clicks/n.impr*100:null, connect:n.clicks>0?n.lpv/n.clicks*100:null,
   conv:(n.lpv>0 && !(n.fleads>0&&pl<=0))?pl/n.lpv*100:null }; }
@@ -442,6 +456,9 @@ const OV_COLS=[
   {k:'qlf',l:'MQL',b:'hi',v:o=>o.m.qlf},
   {k:'cplq',l:'Custo MQL',b:'lo',v:(o,x)=>x.cplq},
   {k:'txq',l:'% MQL',b:'hi',v:(o,x)=>x.txq},
+  {k:'rok',l:'MQL real',b:'hi',v:o=>o.m.rok},
+  {k:'txreal',l:'% real',b:'hi',v:(o,x)=>x.txreal},
+  {k:'cplreal',l:'Custo MQL real',b:'lo',v:(o,x)=>x.cplreal},
   {k:'sales',l:'Vendas',b:'hi',v:o=>o.m.sales},
   {k:'cac',l:'CAC',b:'lo',v:(o,x)=>x.cac},
   {k:'rev',l:'Receita',b:'hi',v:o=>o.m.revenue},
@@ -468,6 +485,7 @@ function ovTable(elId,title,hint,list,level,avg){
       <td class="ov-nm"><div class="ov-name" title="${esc(o.name)}">${sel?'● ':''}${esc(ovLabel(o,level))}</div>${ctx}</td>
       <td>${money(m.spend)}</td><td>${int(m.leads)}</td><td>${x.cpl!=null?money(x.cpl):'—'}</td>
       <td>${int(m.qlf)}</td><td>${ovPill(x.cplq,avg)}</td><td>${x.txq!=null?pct(x.txq):'—'}</td>
+      <td>${int(m.rok)}</td><td>${realPct(m)}</td><td>${realCost(m)}</td>
       <td>${int(m.sales)}</td><td>${x.cac!=null?money(x.cac):'—'}</td><td>${money(m.revenue)}</td><td>${x.roas!=null?fmtRoas(x.roas):'—'}</td>
       <td>${x.cpm!=null?money(x.cpm):'—'}</td><td>${x.ctr!=null?pct(x.ctr):'—'}</td><td>${x.connect!=null?pct(x.connect):'—'}</td><td>${x.conv!=null?pct(x.conv):'—'}</td></tr>`; }).join('');
   el.innerHTML=`<div class="ov-th"><b>${title}</b><span>${hint} · ${int(list.length)} ${list.length===1?'item':'itens'}</span></div>
@@ -484,13 +502,15 @@ function ovLines(groups,elId,level){
   else if(level===2&&s.ad!=null) sub=groups.filter(g=>g.camp===s.camp&&g.adset===s.adset&&g.ad===s.ad);
   const top=sub.filter(g=>g.m.spend>0).slice(0,8), solo=top.length===1;
   if(!top.length){ el.innerHTML='<div class="ov-empty">Sem verba no período para traçar as linhas.</div>'; return; }
-  for(const g of top){ const mp=new Map(); for(const r of g.rows){ let d=mp.get(r.date); if(!d){ d={spend:0,leads:0,qlf:0,sales:0,revenue:0}; mp.set(r.date,d); } d.spend+=r.spend; d.leads+=r.leads; d.qlf+=r.qlf; d.sales+=r.sales; d.revenue+=r.revenue; } g.map=mp; }
+  for(const g of top){ const mp=new Map(); for(const r of g.rows){ let d=mp.get(r.date); if(!d){ d={spend:0,leads:0,qlf:0,sales:0,revenue:0,rok:0,rno:0}; mp.set(r.date,d); } d.spend+=r.spend; d.leads+=r.leads; d.qlf+=r.qlf; d.sales+=r.sales; d.revenue+=r.revenue; d.rok+=r.rok||0; d.rno+=r.rno||0; } g.map=mp; }
   const dset=new Set(); top.forEach(g=>{ for(const [dt,d] of g.map) if(d.spend>0) dset.add(dt); });
+  if(lm.pct && !top.some(g=>[...g.map.values()].some(d=>ovVal(d)!=null))){ el.innerHTML='<div class="ov-empty">O comercial ainda não avaliou nenhuma lead destes itens no período.</div>'; return; }
   const dates=[...dset].sort(), n=dates.length;
   if(!n){ el.innerHTML='<div class="ov-empty">Sem verba no período para traçar as linhas.</div>'; return; }
   const vals=[]; top.forEach(g=>dates.forEach(dt=>{ const d=g.map.get(dt); const v=d?ovVal(d):null; if(v!=null) vals.push(v); }));
   const srt=vals.slice().sort((a,b)=>a-b); let max=srt.length?srt[srt.length-1]:1;
   if(lm.cost && srt.length>=8){ const q=srt[Math.floor(srt.length*0.92)]; max=Math.min(max,q*1.25); }   // pico isolado não achata o resto
+  if(lm.pct) max=100;   // taxa: escala sempre de 0 a 100%
   if(!(max>0)) max=1;
   const W=Math.max(340,el.clientWidth||900), H=250, pl=60, pr=16, pt=16, pb=28, pw=W-pl-pr, ph=H-pt-pb, base=pt+ph;
   const X=i=>pl+(n>1?pw/(n-1)*i:pw/2), Y=v=>base-ph*Math.min(1,v/max);
@@ -509,13 +529,13 @@ function ovLines(groups,elId,level){
     if(solo){ const every=Math.max(1,Math.ceil(n/31));
       dates.forEach((dt,i)=>{ if(i%every) return; const d=g.map.get(dt), v=d?ovVal(d):null; if(v==null) return;
         const yy=v>max?pt+16:Math.max(pt+10,Y(v)-7);
-        svg+=`<text x="${X(i).toFixed(1)}" y="${yy.toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1f2933" paint-order="stroke" stroke="#fbfcfe" stroke-width="3">${lm.cost||lm.money?(v>=1000?'R$ '+n1(v/1000)+'k':'R$ '+int(v)):int(v)}</text>`; }); }
+        svg+=`<text x="${X(i).toFixed(1)}" y="${yy.toFixed(1)}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1f2933" paint-order="stroke" stroke="#fbfcfe" stroke-width="3">${lm.pct?Math.round(v)+'%':(lm.cost||lm.money?(v>=1000?'R$ '+n1(v/1000)+'k':'R$ '+int(v)):int(v))}</text>`; }); }
   });
   const step=Math.max(1,Math.ceil(n/12)); dates.forEach((dt,i)=>{ if(i%step===0||i===n-1) svg+=`<text x="${X(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#7b8794">${cxDM(dt)}</text>`; });
   const bw=n>1?pw/(n-1):pw; dates.forEach((dt,i)=>{ const x=Math.max(pl,X(i)-bw/2); svg+=`<rect class="hz" data-i="${i}" x="${x.toFixed(1)}" y="${pt}" width="${bw.toFixed(1)}" height="${ph}" fill="transparent"/>`; });
   const legend=top.map((g,gi)=>{ const nm=ovLabel(g,level); return `<span class="ov-leg${ovIsSel(g,level)?' on':''}" data-gi="${gi}" title="${esc(g.name)} · clique para filtrar"><i style="background:${OV_PAL[gi%OV_PAL.length]}"></i>${esc(!solo&&nm.length>40?nm.slice(0,39)+'…':nm)}</span>`; }).join('');
   el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(lm.l)} por dia">${svg}</svg>
-    <div class="ov-legs"><span class="ov-metnote">linha = <b>${lm.l} por dia</b>${lm.cost?' · dia sem '+(OV.metric==='cplq'?'MQL':'lead')+' fica sem ponto · ▲ = acima da escala':''}</span>${legend}</div>`;
+    <div class="ov-legs"><span class="ov-metnote">linha = <b>${lm.l} por dia</b>${lm.cost?' · dia sem '+(OV.metric==='cplq'?'MQL':'lead')+' fica sem ponto · ▲ = acima da escala':(lm.pct?' · dia sem lead avaliada fica sem ponto':'')}</span>${legend}</div>`;
   el.querySelectorAll('.ov-leg').forEach(sp=>sp.onclick=()=>{ const g=top[+sp.dataset.gi]; if(g) ovPick(level,g); });
   attachTip(elId, ds=>{ const dt=dates[+ds.i]; const items=[];
     top.forEach((g,gi)=>{ const d=g.map.get(dt); if(d&&(d.spend>0||d.leads>0)) items.push({g,gi,d,v:ovVal(d)}); });
@@ -555,6 +575,7 @@ function renderOV(){
   document.getElementById('ovKpis').innerHTML =
     k('Investimento',money(a.spend)) + k('Leads',int(a.leads),x.cpl!=null?`CPL ${money(x.cpl)}`:'') +
     k('MQL',int(a.qlf),x.txq!=null?`${pct(x.txq)} dos leads`:'') + k('Custo MQL',x.cplq!=null?money(x.cplq):'—',avg&&x.cplq!=null&&S.camp!=null?`média da conta ${money(avg)}`:'') +
+    k('Qualificação real',pct(x.txreal||0),`${int(a.rok)} de ${int(a.rok+a.rno)} avaliadas`+(x.cplreal!=null?` · custo ${money(x.cplreal)}`:'')) +
     k('Vendas',int(a.sales),x.cac!=null?`CAC ${money(x.cac)}`:'') + k('ROAS',x.roas!=null?fmtRoas(x.roas):'—',`receita ${money(a.revenue)}`);
   // cada nível: tabela (lista completa do nível) + gráfico por dia logo abaixo
   const campG=ovGroup(base,0);
@@ -573,9 +594,9 @@ function renderOV(){
   if(dEl){ const dm=new Map(); for(const r of scope){ let d=dm.get(r.date); if(!d){ d=nodeM(); dm.set(r.date,d); } addM(d,r); }
     const days=[...dm.entries()].filter(([,d])=>d.spend>0||d.leads>0||d.sales>0).sort((p,q)=>p[0]<q[0]?1:-1);
     const lab = S.ad!=null?pretty(S.ad):(S.adset!=null?pretty(S.adset):(S.camp!=null?crCampLabel(S.camp):'todas as campanhas'));
-    const row=(dLab,d,cls)=>{ const y=ovM(d); return `<tr class="${cls||''}"><td class="ov-nm">${dLab}</td><td>${money(d.spend)}</td><td>${int(d.leads)}</td><td>${y.cpl!=null?money(y.cpl):'—'}</td><td>${int(d.qlf)}</td><td>${ovPill(y.cplq,avg)}</td><td>${y.txq!=null?pct(y.txq):'—'}</td><td>${int(d.sales)}</td><td>${money(d.revenue)}</td><td>${y.roas!=null?fmtRoas(y.roas):'—'}</td></tr>`; };
+    const row=(dLab,d,cls)=>{ const y=ovM(d); return `<tr class="${cls||''}"><td class="ov-nm">${dLab}</td><td>${money(d.spend)}</td><td>${int(d.leads)}</td><td>${y.cpl!=null?money(y.cpl):'—'}</td><td>${int(d.qlf)}</td><td>${ovPill(y.cplq,avg)}</td><td>${y.txq!=null?pct(y.txq):'—'}</td><td>${int(d.rok)}</td><td>${realPct(d)}</td><td>${realCost(d)}</td><td>${int(d.sales)}</td><td>${money(d.revenue)}</td><td>${y.roas!=null?fmtRoas(y.roas):'—'}</td></tr>`; };
     dEl.innerHTML = `<div class="ov-th"><b>Dia a dia do filtro ativo</b><span>${esc(lab)} · mais recente no topo · custo MQL verde/vermelho comparado à média da conta (${avg!=null?money(avg):'—'})</span></div>` +
-      (days.length ? `<div class="table-scroll ov-scroll"><table class="ov-tbl ov-daily"><thead><tr><th class="ov-nm">Dia</th><th>Investimento</th><th>Leads</th><th>CPL</th><th>MQL</th><th>Custo MQL</th><th>% MQL</th><th>Vendas</th><th>Receita</th><th>ROAS</th></tr></thead><tbody>` +
+      (days.length ? `<div class="table-scroll ov-scroll"><table class="ov-tbl ov-daily"><thead><tr><th class="ov-nm">Dia</th><th>Investimento</th><th>Leads</th><th>CPL</th><th>MQL</th><th>Custo MQL</th><th>% MQL</th><th>MQL real</th><th>% real</th><th>Custo MQL real</th><th>Vendas</th><th>Receita</th><th>ROAS</th></tr></thead><tbody>` +
         days.map(([dt,d])=>row(`${cxDM(dt)} <span class="sub">${WD[parseD(dt).getDay()]}</span>`,d)).join('') + row('<b>Total do período</b>',a,'ov-tot') + `</tbody></table></div>`
         : '<div class="ov-empty">Sem dados no período para esse filtro.</div>');
   }
@@ -1283,6 +1304,7 @@ function render(){
   const prevStart=fmtD(addDays(parseD(prevEnd),-(len-1)));
   const prev=sumDaily(prevStart,prevEnd);
   try{ renderConsolidado(); }catch(err){ console.error('Consolidado:',err); }   // aba nova nunca derruba as outras
+  try{ QL.sticky.clear(); QL.shown=QL_PAGE; renderQual(); }catch(err){ console.error('Qualificação:',err); }
   renderHealth(cur,prev);
   renderReceita(cur,prev);
   renderApCash();
@@ -1500,15 +1522,15 @@ function renderDaily(){
   // ordem pedida pelo cliente (28/10): Investimento, CPM, CPC, Connect Rate, Conversão de página, Leads, CPL, QLF, CPL QLF, % QLF
   // (+ Vendas e CTR no fim). Connect = LPV ÷ cliques; Conversão de página = leads ÷ LPV (padrão da agência p/ Meta).
   const rows=seriesDaily(state.start,state.end).slice().reverse().map(d=>({   // mais recente primeiro
-    date:d.date, spend:d.spend, leads:d.leads, qlf:d.qlf, sales:d.sales, impr:d.impr, clicks:d.clicks, lpv:d.lpv,
+    date:d.date, spend:d.spend, leads:d.leads, qlf:d.qlf, sales:d.sales, impr:d.impr, clicks:d.clicks, lpv:d.lpv, rok:d.rok||0, rno:d.rno||0, txr:realM(d).rate,
     cpm:safe(d.spend,d.impr)*1000, cpc:safe(d.spend,d.clicks), connect:safe(d.lpv,d.clicks)*100, convlp:safe(d.leads-(FORMS_LD.get(d.date)||0),d.lpv)*100,
     cpl:safe(d.spend,d.leads), cplqlf:safe(d.spend,d.qlf), txq:safe(d.qlf,d.leads)*100, ctr:safe(d.clicks,d.impr)*100 }));
   const mm=(k,ok)=>{ const a=rows.filter(r=>!ok||ok(r)).map(r=>r[k]); return a.length?[Math.min(...a),Math.max(...a)]:[0,0]; };
   const sp=mm('spend'),cpm=mm('cpm',r=>r.impr>0),cpc=mm('cpc',r=>r.clicks>0),con=mm('connect',r=>r.clicks>0),clp=mm('convlp',r=>r.lpv>0),
-    le=mm('leads'),cpl=mm('cpl',r=>r.leads>0),q=mm('qlf'),tx=mm('txq',r=>r.leads>0),sa=mm('sales'),ctr=mm('ctr',r=>r.impr>0);
+    le=mm('leads'),cpl=mm('cpl',r=>r.leads>0),q=mm('qlf'),tx=mm('txq',r=>r.leads>0),sa=mm('sales'),ctr=mm('ctr',r=>r.impr>0),rq=mm('rok'),rt=mm('txr',r=>r.txr!=null);
   const cell=(ok,v,rng,mode,fmt)=>ok?`<td style="${heat(v,rng[0],rng[1],mode)}">${fmt(v)}</td>`:'<td>—</td>';
   document.querySelector('#dailyTable thead').innerHTML=
-    '<tr><th>Dia</th><th>Investimento</th><th>CPM</th><th>CPC</th><th>Connect Rate</th><th>Conv. de página</th><th>Leads</th><th>CPL</th><th>QLF</th><th>CPL QLF</th><th>% QLF</th><th>Vendas</th><th>CTR</th></tr>';
+    '<tr><th>Dia</th><th>Investimento</th><th>CPM</th><th>CPC</th><th>Connect Rate</th><th>Conv. de página</th><th>Leads</th><th>CPL</th><th>QLF</th><th>CPL QLF</th><th>% QLF</th><th title="Confirmadas pelo comercial na aba Qualificação Comercial">QLF real</th><th title="Confirmadas ÷ avaliadas pelo comercial">% real</th><th>Vendas</th><th>CTR</th></tr>';
   document.querySelector('#dailyTable tbody').innerHTML = rows.length ? rows.map(r=>`<tr>
     <td>${r.date.slice(8,10)}/${r.date.slice(5,7)}</td>
     <td style="${heat(r.spend,sp[0],sp[1],'vol')}">${money(r.spend)}</td>
@@ -1521,9 +1543,11 @@ function renderDaily(){
     <td style="${heat(r.qlf,q[0],q[1],'vol')}">${int(r.qlf)}</td>
     <td>${cplPill(r.cplqlf,r.qlf)}</td>
     ${cell(r.leads>0,r.txq,tx,'good',pct)}
+    <td style="${heat(r.rok,rq[0],rq[1],'vol')}">${int(r.rok)}</td>
+    ${cell(r.txr!=null,r.txr,rt,'good',pct)}
     <td style="${heat(r.sales,sa[0],sa[1],'vol')}">${int(r.sales)}</td>
     ${cell(r.impr>0,r.ctr,ctr,'good',pct)}</tr>`).join('')
-    : '<tr><td colspan="13" class="sub">Sem dados no período.</td></tr>';
+    : '<tr><td colspan="15" class="sub">Sem dados no período.</td></tr>';
 }
 
 // ===================== estudo das compradoras (3 abas) =====================
@@ -1680,12 +1704,231 @@ function buildPresets(){
     box.appendChild(b);
   });
 }
+// ===================== Qualificação Comercial =====================
+// O comercial marca se cada MQL é mesmo qualificada e a dash recalcula sozinha, inclusive as colunas "real" da aba Funil.
+// Site e repositório são públicos, então nada de dado pessoal vem do build: data-qual.js traz 1 linha por MQL com um código
+// derivado do e-mail. Marcações e nomes/e-mails ficam no backend (qual-backend/Code.gs); nomes e e-mails só com o código do time.
+const QD = window.DASH_QUAL || null;
+const QUAL_API = location.hostname==='localhost' ? '/__qual' : '';
+const QL_REASONS=['Sem perfil','Sem dinheiro','Sem data','Não responde','Contato inválido'];
+const QL_TEAM=['Evellyn','Mayara','Mayra'];
+const QL_PAGE=40, QL_POLL_TAB=6000, QL_POLL_FUNIL=15000, QL_POLL_IDLE=45000;
+const qlKey=(d,c,s,a)=>`${d}\u0001${c}\u0001${s}\u0001${a}`.toLowerCase();   // o build agrupa sem diferenciar maiúsculas
+const QL_ROWS=(()=>{ if(!QD) return [];
+  const gm=new Map(); D.grain.forEach(r=>gm.set(qlKey(r.date,r.campaign,r.adset,r.ad),r));
+  const dm=new Map(); D.daily.forEach(r=>dm.set(r.date,r));
+  return arr(QD.rows).map(r=>{ const date=QD.days[r[1]], camp=QD.camps[r[2]], adset=QD.sets[r[3]], ad=QD.ads[r[4]];
+    return {id:r[0],date,camp,adset,ad,fat:QD.fats[r[5]],g:gm.get(qlKey(date,camp,adset,ad))||null,d:dm.get(date)||null}; }); })();
+const QL={ marks:{}, v:'', pending:new Map(), inflight:false, fetching:false, map:null, mapState:'idle', mapErr:'', code:'', who:'', st:QUAL_API?'wait':'noapi', lastOk:0, ackAt:0, timer:0, funilDirty:false,
+  f:{st:'pend',q:'',camp:'',sort:'new'}, lvl:0, sort:{k:'ok',rev:false}, shown:QL_PAGE, sticky:new Set(), flushT:0 };
+const qlLS={ get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }, set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }, del(k){ try{ localStorage.removeItem(k); }catch(e){} } };
+
+function qlStatus(id){ const p=QL.pending.get(id); if(p) return p.s; const m=QL.marks[id]; return m?m[0]:0; }
+function qlReason(id){ const p=QL.pending.get(id); if(p) return p.r||''; const m=QL.marks[id]; return m?(m[1]||''):''; }
+function qlApply(){   // soma as marcações em daily/grain: daí em diante sumDaily, árvore e V2 enxergam rok/rno como qualquer outra métrica
+  for(const r of D.grain){ r.rok=0; r.rno=0; } for(const r of D.daily){ r.rok=0; r.rno=0; }
+  for(const q of QL_ROWS){ const s=qlStatus(q.id); if(!s) continue; const k=s>0?'rok':'rno'; if(q.g) q.g[k]++; if(q.d) q.d[k]++; } }
+const qlPeriod=()=>QL_ROWS.filter(r=>r.date>=state.start&&r.date<=state.end);
+function qlAgg(rows){ const a={qlf:rows.length,ok:0,no:0}; for(const r of rows){ const s=qlStatus(r.id); if(s>0) a.ok++; else if(s<0) a.no++; }
+  a.ev=a.ok+a.no; a.pend=a.qlf-a.ev; a.rate=a.ev?a.ok/a.ev*100:0; a.cover=a.qlf?a.ev/a.qlf*100:0; return a; }
+const qlAgo=ts=>{ if(!ts) return ''; const s=Math.max(0,Math.round(Date.now()/1000-ts)); if(s<60) return 'agora'; const m=Math.round(s/60); if(m<60) return `há ${m} min`; const h=Math.round(m/60); if(h<24) return `há ${h} h`; return `há ${Math.round(h/24)} d`; };
+// nome curto da campanha: o que vem depois da data + a data ("TOP ADS · SP · 29/10"); o prefixo "ALL FRIO | CONV | CBO" se repete em todas
+const qlCamp=c=>{ const p=String(c).split('|').map(s=>s.trim()).filter(Boolean), i=p.findIndex(s=>/^\d{2}\/\d{2}\/\d{4}$/.test(s)); if(i<0||i===p.length-1) return crCampLabel(c); return p.slice(i+1).join(' · ')+' · '+p[i].slice(0,5); };
+const qlFatLabel=raw=>{ const t=String(raw==null?'':raw).replace(/_/g,' ').trim(); if(!t) return ''; return (PQ_DEF.fat.map&&PQ_DEF.fat.map[nkey(t)])||cap1(t); };
+const qlWa=t=>{ let d=String(t||'').replace(/\D/g,''); if(d.length<10) return ''; if(d.length<=11) d='55'+d; return 'https://wa.me/'+d; };
+
+// ---- conversa com o backend ----
+async function qlPost(body,ms){ const ctl=new AbortController(), to=setTimeout(()=>ctl.abort(),ms||60000);
+  try{ const res=await fetch(QUAL_API,{method:'POST',body:JSON.stringify(body),headers:{'Content-Type':'text/plain;charset=utf-8'},credentials:'omit',redirect:'follow',signal:ctl.signal}); return await res.json(); }
+  finally{ clearTimeout(to); } }
+async function qlFetch(){ if(!QUAL_API||QL.fetching) return; QL.fetching=true; const t0=Date.now(); const ctl=new AbortController(), to=setTimeout(()=>ctl.abort(),30000);
+  try{ const res=await fetch(`${QUAL_API}?a=marks&v=${encodeURIComponent(QL.v)}&_=${t0}`,{credentials:'omit',redirect:'follow',signal:ctl.signal}); const j=await res.json();
+    if(!j.ok) throw new Error(j.err||'erro');
+    QL.st='live'; QL.lastOk=Date.now();
+    if(!j.same && t0>=QL.ackAt){ const first=!QL.v; QL.marks=j.m||{}; QL.v=j.v; qlChanged();   // resposta pedida antes da última gravação é descartada: a próxima já vem certa
+      if(first) qlRenderList(); }   // na abertura a lista foi filtrada antes de saber quem já tinha sido marcada
+  }catch(e){ QL.st='off'; }
+  finally{ clearTimeout(to); QL.fetching=false; qlLive(); } }
+function qlTick(){ clearTimeout(QL.timer); const pq=document.getElementById('pageQual'), pf=document.getElementById('pageFunnel'), onQ=pq&&!pq.hidden, onF=pf&&!pf.hidden;
+  if(document.visibilityState==='visible' && (onQ||onF)) qlFetch();
+  QL.timer=setTimeout(qlTick,onQ?QL_POLL_TAB:(onF?QL_POLL_FUNIL:QL_POLL_IDLE)); }
+function qlSavePending(){ if(QL.pending.size) qlLS.set('ccn_qual_pending',JSON.stringify([...QL.pending.entries()])); else qlLS.del('ccn_qual_pending'); }
+function qlFlushSoon(ms){ clearTimeout(QL.flushT); QL.flushT=setTimeout(qlFlush,ms==null?250:ms); }
+async function qlFlush(){ if(QL.inflight||!QL.pending.size||!QL.code||!QUAL_API) return; QL.inflight=true; qlLive();
+  const items=[...QL.pending.entries()].slice(0,100).map(([id,p])=>{ const r=QL_ROWS.find(x=>x.id===id)||{}, lead=(QL.map&&QL.map[id])||[];
+    return {id,s:p.s,r:p.r||'',d:r.date||'',n:lead[0]||'',e:lead[1]||'',t:lead[2]||'',f:qlFatLabel(r.fat),c:r.camp||'',ss:r.adset||'',ad:r.ad||''}; });
+  let retry=0;
+  try{ const j=await qlPost({a:'mark',code:QL.code,who:QL.who,items});
+    if(j.ok){ const now=Math.floor(Date.now()/1000);
+      for(const it of items){ if(it.s) QL.marks[it.id]=[it.s,it.r,QL.who,now]; else delete QL.marks[it.id];
+        const cur=QL.pending.get(it.id); if(cur&&cur.s===it.s&&(cur.r||'')===it.r) QL.pending.delete(it.id); }   // se ela mudou de ideia no meio do envio, a nova marcação segue na fila
+      QL.ackAt=Date.now(); QL.st='live'; QL.lastOk=Date.now(); qlSavePending();
+    } else if(j.err==='codigo'){ qlLogout('O código do time mudou. Digite o novo para continuar.'); }
+    else { retry=4000; }
+  }catch(e){ QL.st='off'; retry=5000; }
+  finally{ QL.inflight=false; qlLive(); if(QL.pending.size&&QL.code) qlFlushSoon(retry||50); else if(!retry) qlFetch(); } }
+function qlSet(id,s,r){ QL.pending.set(id,{s,r:r||''}); QL.sticky.add(id); qlSavePending(); qlChanged(); qlFlushSoon(); }
+async function qlLoadMap(fresh){ if(!QUAL_API||!QL.code||QL.mapState==='loading') return; QL.mapState='loading'; QL.mapErr=''; qlRenderList();
+  try{ const j=await qlPost({a:'list',code:QL.code,fresh:!!fresh},240000);
+    if(j.ok){ QL.map=j.map||{}; QL.mapState='ok';
+      const faltam=!fresh && QL_ROWS.some(r=>!QL.map[r.id]);
+      if(faltam && Date.now()-(j.at||0)>300000){ QL.mapState='idle'; return qlLoadMap(true); }   // lead nova desde a última leitura
+    } else if(j.err==='codigo'){ QL.mapState='idle'; qlLogout('O código do time mudou. Digite o novo para continuar.'); return; }
+    else { QL.mapState='err'; QL.mapErr=j.err||'erro'; }
+  }catch(e){ QL.mapState='err'; QL.mapErr=e.name==='AbortError'?'demorou demais':'sem conexão'; }
+  qlRenderList(); qlFlushSoon(0); }
+function qlLogout(msg){ QL.code=''; QL.map=null; QL.mapState='idle'; qlLS.del('ccn_qual_code'); qlRenderList(); const er=document.getElementById('qlErr'); if(er) er.textContent=msg||''; }
+
+// ---- atualização da tela ----
+function qlChanged(){ qlApply(); const pq=document.getElementById('pageQual'), pf=document.getElementById('pageFunnel');
+  if(pq&&!pq.hidden){ try{ qlRenderStats(); qlPatchRows(); qlSegCounts(); }catch(err){ console.error('Qualificação:',err); } }
+  if(pf&&!pf.hidden) qlRerenderFunil(); else QL.funilDirty=true; }
+function qlRerenderFunil(){ QL.funilDirty=false; const sc=()=>[...document.querySelectorAll('#pageFunnel .table-scroll')], keep=sc().map(el=>[el.scrollLeft,el.scrollTop]);
+  const cur=sumDaily(state.start,state.end), len=dayspan(state.start,state.end), prevEnd=fmtD(addDays(parseD(state.start),-1)), prev=sumDaily(fmtD(addDays(parseD(prevEnd),-(len-1))),prevEnd);
+  renderFunnel(cur,prev); renderTable(); renderDaily(); try{ renderOV(); }catch(err){ console.error('Otimização V2:',err); }
+  sc().forEach((el,i)=>{ if(keep[i]){ el.scrollLeft=keep[i][0]; el.scrollTop=keep[i][1]; } }); }
+function qlLive(){ const el=document.getElementById('qlLive'); if(!el) return; const n=QL.pending.size; let h;
+  if(QL.st==='noapi') h='<i class="off"></i>Conexão com o comercial ainda não ativada';
+  else if(QL.st==='off') h=`<i class="off"></i>Sem conexão, tentando de novo${n?` · ${int(n)} ${n===1?'marcação guardada':'marcações guardadas'}`:''}`;
+  else if(n) h=`<i class="busy"></i>Salvando ${int(n)} ${n===1?'marcação':'marcações'}…`;
+  else if(QL.st==='wait') h='<i class="busy"></i>Conectando…';
+  else { const s=Math.max(0,Math.round((Date.now()-QL.lastOk)/1000)); h=`<i></i>Ao vivo · atualizado ${s<3?'agora':`há ${s}s`}`; }
+  el.innerHTML=h; }
+function renderQual(){ const pq=document.getElementById('pageQual'); if(!pq||pq.hidden) return; qlApply(); qlRenderStats(); qlRenderList(); }
+function qlRenderStats(){ qlRenderHero(); qlRenderRank(); qlRenderDay(); qlRenderWhy(); }
+function qlRenderHero(){ const el=document.getElementById('qlHero'); if(!el) return;
+  const a=qlAgg(qlPeriod()), m=sumDaily(state.start,state.end), custo=a.qlf>0?m.spend/a.qlf:null, real=(a.rate>0&&custo!=null)?custo/(a.rate/100):null;
+  const R=62, C=2*Math.PI*R, dash=(a.rate/100*C).toFixed(1);
+  const frase=a.ev ? `De cada 100 leads que o comercial já avaliou neste período, <b>${Math.round(a.rate)}</b> ${Math.round(a.rate)===1?'era':'eram'} mesmo qualificadas.` : 'Ainda sem avaliações neste período. A taxa começa a mexer na primeira lead que o comercial marcar.';
+  const tile=(v,l,cl)=>`<div class="ql-tile ${cl||''}"><b>${v}</b><span>${l}</span></div>`;
+  const w=(n)=>a.qlf?(n/a.qlf*100).toFixed(2):0;
+  el.innerHTML=`<div class="ql-gauge"><svg viewBox="0 0 160 160" role="img" aria-label="Taxa de qualificação real ${pct(a.rate)}"><circle cx="80" cy="80" r="${R}" class="ql-g-bg"/>${a.rate>0?`<circle cx="80" cy="80" r="${R}" class="ql-g-fg" stroke-dasharray="${dash} ${C.toFixed(1)}" transform="rotate(-90 80 80)"/>`:''}</svg><div class="ql-g-c"><b>${pct(a.rate)}</b><span>${int(a.ok)} de ${int(a.ev)}</span></div></div>
+    <div class="ql-h-main">
+      <div class="ql-h-top"><div><div class="ql-h-t">Taxa de qualificação real</div><div class="ql-h-s">${frase}</div></div><span class="ql-live" id="qlLive"></span></div>
+      <div class="ql-tiles">${tile(int(a.qlf),'MQL no período')}${tile(int(a.ok),'✓ Qualificadas reais','ok')}${tile(int(a.no),'✗ Não qualificadas','no')}${tile(int(a.pend),'Falta avaliar')}${tile(custo!=null?money(custo):'—','Custo MQL')}${tile(real!=null?money(real):'—','Custo MQL real','gold')}</div>
+      <div class="ql-cover"><div class="ql-cover-t">Avaliadas pelo comercial: <b>${int(a.ev)} de ${int(a.qlf)}</b> (${pct(a.cover)})</div>
+        <div class="ql-stack dark" title="${int(a.ok)} qualificadas · ${int(a.no)} não qualificadas · ${int(a.pend)} faltam avaliar">${a.ok?`<i class="ok" style="width:${w(a.ok)}%"></i>`:''}${a.no?`<i class="no" style="width:${w(a.no)}%"></i>`:''}</div></div>
+    </div>`;
+  qlLive(); }
+function qlGroups(){ const lvl=QL.lvl, keyOf=(c,s,d)=>(lvl===0?c:(lvl===1?c+'\u0001'+s:c+'\u0001'+s+'\u0001'+d)).toLowerCase(), g=new Map();
+  for(const r of qlPeriod()){ const k=keyOf(r.camp,r.adset,r.ad); let o=g.get(k); if(!o){ o={camp:r.camp,adset:r.adset,ad:r.ad,qlf:0,ok:0,no:0,spend:0}; g.set(k,o); }
+    o.qlf++; const s=qlStatus(r.id); if(s>0) o.ok++; else if(s<0) o.no++; }
+  for(const r of D.grain){ if(r.date<state.start||r.date>state.end||!r.spend) continue; const o=g.get(keyOf(r.campaign,r.adset,r.ad)); if(o) o.spend+=r.spend; }
+  return [...g.values()].map(o=>{ o.ev=o.ok+o.no; o.pend=o.qlf-o.ev; o.rate=o.ev?o.ok/o.ev*100:null; o.custo=o.qlf&&o.spend?o.spend/o.qlf:null; o.real=(o.rate>0&&o.custo!=null)?o.custo/(o.rate/100):null;
+    o.name=lvl===0?qlCamp(o.camp):pretty(lvl===1?o.adset:o.ad); o.ctx=lvl===0?pretty(o.camp):(lvl===1?qlCamp(o.camp):`${qlCamp(o.camp)} › ${pretty(o.adset)}`); return o; }); }
+const QL_COLS=[{k:'ok',l:'✓ Reais',hi:1},{k:'no',l:'✗ Não',hi:0},{k:'pend',l:'Faltam',hi:1},{k:'qlf',l:'MQL',hi:1},{k:'rate',l:'% real',hi:1},{k:'custo',l:'Custo MQL',hi:0},{k:'real',l:'Custo MQL real',hi:0}];
+function qlRenderRank(){ const elT=document.getElementById('qlRank'), elH=document.getElementById('qlHl'); if(!elT) return;
+  const rows=qlGroups(), unit=['campanha','conjunto','anúncio'][QL.lvl], lab=['Campanha','Conjunto','Anúncio'][QL.lvl];
+  document.querySelectorAll('#qlLvl button').forEach(b=>b.classList.toggle('on',+b.dataset.l===QL.lvl));
+  const byOk=rows.slice().sort((a,b)=>b.ok-a.ok||(b.rate||0)-(a.rate||0)||b.qlf-a.qlf), evd=byOk.filter(o=>o.ev>0);
+  const hlCard=(cl,ic,tit,o)=>`<div class="ql-hl-c ${cl}"><span class="ql-hl-i">${ic}</span><div><div class="ql-hl-t">${tit}</div><div class="ql-hl-n" title="${esc(o.ctx)}">${esc(o.name)}</div><div class="ql-hl-s"><b>${int(o.ok)}</b> ${o.ok===1?'qualificada real':'qualificadas reais'} · ${pct(o.rate||0)} ${o.ev===1?'da única avaliada':`das ${int(o.ev)} avaliadas`}${o.real!=null?` · custo real ${money(o.real)}`:''}</div></div></div>`;
+  if(evd.length>=2){ const worst=evd.slice().sort((a,b)=>a.ok-b.ok||(a.rate||0)-(b.rate||0)||b.ev-a.ev)[0];
+    elH.innerHTML=hlCard('best','🏆',`Maior volume de qualificadas reais`,evd[0])+hlCard('worst','⚠️',`Menor volume de qualificadas reais`,worst); }
+  else if(evd.length===1){ elH.innerHTML=hlCard('best','🏆',`Maior volume de qualificadas reais`,evd[0])+`<div class="ql-hl-c empty">Com avaliações em mais de ${unit==='campanha'?'uma campanha':(unit==='conjunto'?'um conjunto':'um anúncio')}, aparece aqui quem traz menos.</div>`; }
+  else elH.innerHTML=`<div class="ql-hl-c empty">Assim que o comercial marcar as primeiras leads, aparece aqui ${unit==='anúncio'?'o anúncio':`${unit==='campanha'?'a':'o'} ${unit}`} com maior e menor volume de qualificadas reais.</div>`;
+  const col=QL_COLS.find(c=>c.k===QL.sort.k)||QL_COLS[0];
+  const list=rows.slice().sort((a,b)=>{ const x=a[col.k], y=b[col.k]; if(x==null&&y==null) return b.qlf-a.qlf; if(x==null) return 1; if(y==null) return -1;
+    let r=col.hi?y-x:x-y; if(QL.sort.rev) r=-r; return r||(b.rate||0)-(a.rate||0)||b.qlf-a.qlf; });
+  const maxQ=Math.max(1,...list.map(o=>o.qlf));
+  const head=`<tr><th class="ql-nm">${lab}</th><th class="ql-barh">MQL avaliadas e pendentes</th>${QL_COLS.map(c=>{ const on=QL.sort.k===c.k; return `<th class="ql-sort${on?' on':''}" data-k="${c.k}" title="clique para ordenar · de novo para inverter">${c.l}${on?` <span class="ov-arr">${QL.sort.rev?'▲':'▼'}</span>`:''}</th>`; }).join('')}</tr>`;
+  const body=list.map((o,i)=>{ const sel=QL.lvl===0&&QL.f.camp===o.camp, wt=o.qlf/maxQ*100, pc=n=>o.qlf?(n/o.qlf*100).toFixed(2):0;
+    return `<tr class="ql-r${QL.lvl===0?' click':''}${sel?' sel':''}" data-i="${i}"><td class="ql-nm"><div class="ql-rn" title="${esc(o.name)}">${esc(o.name)}</div><div class="ov-ctx" title="${esc(o.ctx)}">${esc(o.ctx)}</div></td>
+      <td class="ql-barc"><div class="ql-stack" style="width:${wt.toFixed(1)}%" title="${int(o.ok)} qualificadas · ${int(o.no)} não qualificadas · ${int(o.pend)} faltam avaliar">${o.ok?`<i class="ok" style="width:${pc(o.ok)}%"></i>`:''}${o.no?`<i class="no" style="width:${pc(o.no)}%"></i>`:''}</div></td>
+      <td class="ql-okv">${int(o.ok)}</td><td>${int(o.no)}</td><td>${int(o.pend)}</td><td>${int(o.qlf)}</td><td>${o.rate!=null?`<b>${pct(o.rate)}</b>`:'—'}</td><td>${o.custo!=null?money(o.custo):'—'}</td><td>${o.real!=null?money(o.real):'—'}</td></tr>`; }).join('');
+  elT.innerHTML=`<thead>${head}</thead><tbody>${body||`<tr><td colspan="9" class="sub">Sem MQL no período.</td></tr>`}</tbody>`;
+  elT.querySelectorAll('th.ql-sort').forEach(th=>th.onclick=()=>{ const k=th.dataset.k; if(QL.sort.k===k) QL.sort.rev=!QL.sort.rev; else QL.sort={k,rev:false}; qlRenderRank(); });
+  if(QL.lvl===0) elT.querySelectorAll('tr.ql-r').forEach(tr=>tr.onclick=()=>{ const o=list[+tr.dataset.i]; if(!o) return; QL.f.camp=QL.f.camp===o.camp?'':o.camp; const sel=document.getElementById('qlCamp'); if(sel) sel.value=QL.f.camp; QL.sticky.clear(); QL.shown=QL_PAGE; qlRenderRank(); qlRenderList(); if(QL.f.camp&&QL.code){ const card=document.getElementById('qlListCard'); if(card) card.scrollIntoView({behavior:'smooth',block:'start'}); } }); }
+function qlRenderDay(){ const el=document.getElementById('qlDay'); if(!el) return; const mp=new Map();
+  for(const r of qlPeriod()){ let o=mp.get(r.date); if(!o){ o={ok:0,no:0,pend:0}; mp.set(r.date,o); } const s=qlStatus(r.id); if(s>0) o.ok++; else if(s<0) o.no++; else o.pend++; }
+  const days=[...mp.keys()].sort(), n=days.length; if(!n){ el.innerHTML='<div class="ov-empty">Sem MQL no período.</div>'; return; }
+  const W=Math.max(320,el.clientWidth||640), H=210, pl=30, pr=8, pt=10, pb=24, pw=W-pl-pr, ph=H-pt-pb, base=pt+ph;
+  const max=Math.max(1,...days.map(k=>{ const o=mp.get(k); return o.ok+o.no+o.pend; })), Y=v=>v/max*ph, gw=pw/n, bw=Math.max(2,Math.min(gw-3,22));
+  let svg=''; [0,0.5,1].forEach(f=>{ const y=base-ph*f; svg+=`<line x1="${pl}" y1="${y}" x2="${W-pr}" y2="${y}" stroke="#eef2f6"/><text x="${pl-5}" y="${y+3}" text-anchor="end" font-size="10" fill="#7b8794">${Math.round(max*f)}</text>`; });
+  const step=Math.max(1,Math.ceil(n/12));
+  days.forEach((k,i)=>{ const o=mp.get(k), x=pl+i*gw+(gw-bw)/2; let y=base; const seg=(v,cl)=>{ if(!v) return; const h=Y(v); y-=h; svg+=`<rect class="${cl}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,h-(y>pt?1:0)).toFixed(1)}" rx="2"/>`; };
+    seg(o.ok,'b-ok'); seg(o.no,'b-no'); seg(o.pend,'b-pend');
+    if(i%step===0||i===n-1) svg+=`<text x="${(pl+i*gw+gw/2).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="#7b8794">${cxDM(k)}</text>`;
+    svg+=`<rect class="hz" data-i="${i}" x="${(pl+i*gw).toFixed(1)}" y="${pt}" width="${gw.toFixed(1)}" height="${ph}" fill="transparent"/>`; });
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="MQL por dia de entrada, por resultado da avaliação">${svg}</svg>`;
+  attachTip('qlDay',ds=>{ const k=days[+ds.i], o=mp.get(k), ev=o.ok+o.no; return `<div class="tt-d">${k.split('-').reverse().join('/')} · ${WD[parseD(k).getDay()]}</div>
+    <div class="tt-r"><span class="tdot" style="background:var(--green)"></span>✓ Qualificadas reais<b>${int(o.ok)}</b></div><div class="tt-r"><span class="tdot" style="background:var(--red)"></span>✗ Não qualificadas<b>${int(o.no)}</b></div><div class="tt-r"><span class="tdot" style="background:#cfd6de"></span>Faltam avaliar<b>${int(o.pend)}</b></div>
+    <div class="tt-r"><span class="sub">Taxa real do dia: ${ev?pct(o.ok/ev*100):'—'}</span></div>`; }); }
+function qlRenderWhy(){ const elW=document.getElementById('qlWhy'), elB=document.getElementById('qlBy'); if(!elW) return; const why=new Map(), by=new Map(); let nNo=0, nEv=0;
+  const seen=new Set(); for(const r of qlPeriod()){ if(seen.has(r.id)) continue; seen.add(r.id); const s=qlStatus(r.id); if(!s) continue; nEv++;
+    const who=QL.pending.has(r.id)?QL.who:((QL.marks[r.id]||[])[2]||'—'); let b=by.get(who); if(!b){ b={ok:0,no:0}; by.set(who,b); } if(s>0) b.ok++; else b.no++;
+    if(s<0){ nNo++; const w=qlReason(r.id)||'Sem motivo informado'; why.set(w,(why.get(w)||0)+1); } }
+  elW.innerHTML=nNo?bars([...why.entries()].sort((a,b)=>b[1]-a[1]).map(([label,n])=>({label,n,pct:n/nNo*100})),'var(--red)'):'<div class="sub">Nenhuma lead reprovada no período.</div>';
+  elB.innerHTML=nEv?bars([...by.entries()].sort((a,b)=>(b[1].ok+b[1].no)-(a[1].ok+a[1].no)).map(([label,b])=>({label,n:b.ok+b.no,pct:(b.ok+b.no)/nEv*100})),'var(--blue2)'):'<div class="sub">Ninguém avaliou neste período ainda.</div>'; }
+
+// ---- lista para o comercial marcar ----
+function qlRowHTML(r){ const s=qlStatus(r.id), lead=(QL.map&&QL.map[r.id])||null, mk=QL.marks[r.id], pend=QL.pending.has(r.id), why=qlReason(r.id), wa=lead?qlWa(lead[2]):'';
+  const by=s?(pend?'salvando…':`${esc(mk&&mk[2]||'')}${mk&&mk[3]?' · '+qlAgo(mk[3]):''}`):'';
+  const fat=qlFatLabel(r.fat);
+  return `<div class="ql-row st${s}" data-id="${esc(r.id)}">
+    <div class="ql-lead"><div class="ql-name">${lead?esc(lead[0]||'(sem nome)'):'…'}</div><div class="ql-mail">${lead?esc(lead[1]):''}${wa?` <a class="ql-wa" href="${esc(wa)}" target="_blank" rel="noopener noreferrer" title="Abrir WhatsApp">WhatsApp</a>`:''}</div></div>
+    <div class="ql-info">${fat?`<span class="ql-fat">${esc(fat)}</span>`:''}<span class="ql-dt">${cxDM(r.date)}</span><div class="ql-src" title="${esc(r.camp)} › ${esc(r.adset)} › ${esc(r.ad)}">${esc(qlCamp(r.camp))} › ${esc(pretty(r.ad))}</div></div>
+    <div class="ql-act"><button type="button" class="ql-btn yes${s>0?' on':''}" data-act="yes" aria-pressed="${s>0}" aria-label="Qualificada" title="Qualificada de verdade">✓</button><button type="button" class="ql-btn nop${s<0?' on':''}" data-act="no" aria-pressed="${s<0}" aria-label="Não qualificada" title="Não é qualificada">✗</button><div class="ql-by">${by}</div></div>
+    ${s<0?`<div class="ql-reasons"><span>Motivo:</span>${QL_REASONS.map(x=>`<button type="button" class="ql-chip${why===x?' on':''}" data-act="why" data-r="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}
+  </div>`; }
+function qlFiltered(){ const f=QL.f, q=nkey(f.q), rows=qlPeriod().filter(r=>{ if(f.camp&&r.camp!==f.camp) return false;
+    const s=qlStatus(r.id), want=f.st==='all'||(f.st==='pend'&&s===0)||(f.st==='ok'&&s>0)||(f.st==='no'&&s<0);
+    if(!want&&!QL.sticky.has(r.id)) return false;   // quem acabou de ser marcada fica na tela até trocar o filtro: a lista não pula embaixo do dedo
+    if(q){ const p=QL.map&&QL.map[r.id]; if(!p||!nkey(p[0]+' '+p[1]).includes(q)) return false; }
+    return true; });
+  return rows.sort((a,b)=>f.sort==='old'?(a.date<b.date?-1:(a.date>b.date?1:0)):(a.date<b.date?1:(a.date>b.date?-1:0))); }
+function qlSegCounts(){ const rows=qlPeriod().filter(r=>!QL.f.camp||r.camp===QL.f.camp), a=qlAgg(rows), c={pend:a.pend,ok:a.ok,no:a.no,all:a.qlf};
+  document.querySelectorAll('#qlSt button').forEach(b=>{ b.classList.toggle('on',b.dataset.st===QL.f.st); const em=b.querySelector('em'); if(em) em.textContent=int(c[b.dataset.st]); }); }
+function qlRenderList(){ const gate=document.getElementById('qlGate'), tools=document.getElementById('qlTools'), box=document.getElementById('qlRows'), more=document.getElementById('qlMore'), me=document.getElementById('qlMe'); if(!box) return;
+  const logged=!!QL.code; gate.hidden=logged; tools.hidden=!logged;
+  if(!QUAL_API){ gate.hidden=false; gate.querySelector('form').hidden=true; gate.querySelector('p').textContent='A conexão com o comercial está sendo ativada. A lista aparece aqui assim que ela estiver pronta.'; box.innerHTML=''; more.innerHTML=''; me.innerHTML=''; return; }
+  if(!logged){ box.innerHTML=''; more.innerHTML=''; me.innerHTML=''; const w=document.getElementById('qlWhoIn'); if(w&&!w.value) w.value=QL.who||''; return; }
+  me.innerHTML=`<span class="ql-me">Marcando como <b>${esc(QL.who)}</b> · <a href="#" id="qlOut">sair</a></span>`;
+  document.getElementById('qlOut').onclick=e=>{ e.preventDefault(); qlLogout(''); };
+  const sel=document.getElementById('qlCamp');
+  if(sel){ const cs=[...new Set(qlPeriod().map(r=>r.camp))].sort((a,b)=>qlCamp(a).localeCompare(qlCamp(b),'pt-BR')); if(QL.f.camp&&!cs.includes(QL.f.camp)) QL.f.camp='';
+    sel.innerHTML='<option value="">Todas as campanhas</option>'+cs.map(c=>`<option value="${esc(c)}">${esc(qlCamp(c))}</option>`).join(''); sel.value=QL.f.camp; }
+  qlSegCounts();
+  if(QL.mapState==='loading'&&!QL.map){ box.innerHTML='<div class="ql-note">⏳ Carregando nomes e e-mails… a primeira abertura do dia pode levar até 1 minuto.</div>'; more.innerHTML=''; return; }
+  if(QL.mapState==='err'&&!QL.map){ box.innerHTML=`<div class="ql-note err">Não consegui carregar a lista (${esc(QL.mapErr)}). <button type="button" class="ql-retry" id="qlRetry">Tentar de novo</button></div>`; more.innerHTML=''; document.getElementById('qlRetry').onclick=()=>qlLoadMap(true); return; }
+  if(!QL.map){ qlLoadMap(false); return; }
+  const rows=qlFiltered(), shown=rows.slice(0,QL.shown);
+  box.innerHTML=shown.length?shown.map(qlRowHTML).join(''):`<div class="ql-note">${QL.f.st==='pend'&&!QL.f.q?'🎉 Nenhuma lead pendente neste filtro.':'Nenhuma lead neste filtro.'}</div>`;
+  more.innerHTML=rows.length>QL.shown?`<button type="button" class="ql-more" id="qlMoreBtn">Mostrar mais ${int(Math.min(QL_PAGE,rows.length-QL.shown))} <span class="sub">(${int(QL.shown)} de ${int(rows.length)})</span></button>`:(rows.length?`<div class="sub ql-total">${int(rows.length)} ${rows.length===1?'lead':'leads'} neste filtro</div>`:'');
+  const mb=document.getElementById('qlMoreBtn'); if(mb) mb.onclick=()=>{ QL.shown+=QL_PAGE; qlRenderList(); }; }
+function qlPatchRows(){ const box=document.getElementById('qlRows'); if(!box||!QL.code||!QL.map) return; const act=document.activeElement, keep=act&&act.dataset&&act.closest('.ql-row')?{id:act.closest('.ql-row').dataset.id,a:act.dataset.act,r:act.dataset.r}:null;
+  const byId=new Map(); QL_ROWS.forEach(r=>{ if(!byId.has(r.id)) byId.set(r.id,r); });
+  box.querySelectorAll('.ql-row').forEach(el=>{ const r=byId.get(el.dataset.id); if(!r) return; const t=document.createElement('div'); t.innerHTML=qlRowHTML(r); const nw=t.firstElementChild; if(nw&&!nw.isEqualNode(el)) el.replaceWith(nw); });
+  if(keep){ const row=box.querySelector(`.ql-row[data-id="${keep.id}"]`); const b=row&&row.querySelector(keep.r?`[data-act="${keep.a}"][data-r="${keep.r}"]`:`[data-act="${keep.a}"]`); if(b) b.focus({preventScroll:true}); } }
+function qlInit(){
+  const pend=qlLS.get('ccn_qual_pending'); if(pend){ try{ JSON.parse(pend).forEach(([id,p])=>QL.pending.set(id,p)); }catch(e){} }
+  QL.who=qlLS.get('ccn_qual_who')||''; QL.code=qlLS.get('ccn_qual_code')||''; qlApply();
+  const dl=document.getElementById('qlTeam'); if(dl) dl.innerHTML=QL_TEAM.map(n=>`<option value="${esc(n)}"></option>`).join('');
+  const form=document.getElementById('qlLogin');
+  if(form) form.onsubmit=async e=>{ e.preventDefault(); const who=document.getElementById('qlWhoIn').value.trim(), code=document.getElementById('qlCodeIn').value.trim(), er=document.getElementById('qlErr'), btn=form.querySelector('button');
+    if(!who){ er.textContent='Coloque seu nome: ele aparece em cada marcação.'; return; } if(!code){ er.textContent='Digite o código do time.'; return; }
+    er.textContent=''; btn.disabled=true; btn.textContent='Entrando…';
+    try{ const j=await qlPost({a:'login',code}); if(j.ok){ QL.who=who; QL.code=code; qlLS.set('ccn_qual_who',who); qlLS.set('ccn_qual_code',code); document.getElementById('qlCodeIn').value=''; qlRenderList(); } else er.textContent=j.err==='codigo'?'Código incorreto.':'Não consegui entrar agora. Tente de novo.'; }
+    catch(err){ er.textContent='Sem conexão. Tente de novo.'; } finally{ btn.disabled=false; btn.textContent='Entrar'; } };
+  document.querySelectorAll('#qlLvl button').forEach(b=>b.onclick=()=>{ QL.lvl=+b.dataset.l; QL.sort={k:'ok',rev:false}; qlRenderRank(); });
+  const refilter=()=>{ QL.sticky.clear(); QL.shown=QL_PAGE; qlRenderList(); };
+  document.querySelectorAll('#qlSt button').forEach(b=>b.onclick=()=>{ QL.f.st=b.dataset.st; refilter(); });
+  const q=document.getElementById('qlSearch'); if(q){ let t=0; q.oninput=()=>{ clearTimeout(t); t=setTimeout(()=>{ QL.f.q=q.value; refilter(); },180); }; }
+  const c=document.getElementById('qlCamp'); if(c) c.onchange=()=>{ QL.f.camp=c.value; refilter(); qlRenderRank(); };
+  const so=document.getElementById('qlSortSel'); if(so) so.onchange=()=>{ QL.f.sort=so.value; refilter(); };
+  const box=document.getElementById('qlRows');
+  if(box) box.onclick=e=>{ const b=e.target.closest('button[data-act]'); if(!b) return; const row=b.closest('.ql-row'); if(!row) return; const id=row.dataset.id, s=qlStatus(id), a=b.dataset.act;
+    if(a==='yes') qlSet(id,s>0?0:1,''); else if(a==='no') qlSet(id,s<0?0:-1,''); else if(a==='why'){ const r=b.dataset.r; qlSet(id,-1,qlReason(id)===r?'':r); } };
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') qlTick(); });
+  window.addEventListener('online',()=>{ qlFlushSoon(0); qlTick(); });
+  setInterval(()=>{ const pq=document.getElementById('pageQual'); if(pq&&!pq.hidden) qlLive(); },1000);
+  qlTick(); if(QL.pending.size&&QL.code) qlFlushSoon(800);
+}
 function init(){
   document.getElementById('updated').textContent = 'Atualizado: '+D.generatedAtBR;
   document.getElementById('qualNote').textContent = 'Qualificado = '+D.qualification;
   document.getElementById('taxNote').textContent = 'Gasto inclui imposto (× '+(D.taxMultiplier).toLocaleString('pt-BR',{minimumFractionDigits:4})+')';
   buildPresets();
-  const PAGES=['consolidado','funnel','sd','datas','obj','insights','comercial','bestads','tempo','perfil','apice','ascensao'];
+  const PAGES=['consolidado','funnel','qual','sd','datas','obj','insights','comercial','bestads','tempo','perfil','apice','ascensao'];
   const NOCTRL=['insights','datas']; // abas de base completa (sem seletor de período); consolidado, obj, tempo, perfil, apice, comercial, bestads, sd e ascensao usam o seletor
   document.querySelectorAll('.pagebtn').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.pagebtn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
@@ -1694,9 +1937,12 @@ function init(){
     document.querySelector('.controls').style.display = NOCTRL.includes(pg) ? 'none' : '';
     if(pg==='apice') renderApChart();   // o gráfico mede a largura real -> desenha quando a aba aparece
     if(pg==='consolidado') cxRedrawCharts();
-    if(pg==='funnel') renderOV();   // os gráficos da Otimização V2 medem a largura real
+    if(pg==='funnel'){ if(QL.funilDirty) qlRerenderFunil(); else renderOV(); }   // os gráficos da Otimização V2 medem a largura real
+    if(pg==='qual') renderQual();
+    qlTick();   // marcações atualizadas assim que abre a aba
   });
-  let apRz=0; window.addEventListener('resize',()=>{ clearTimeout(apRz); apRz=setTimeout(()=>{ const pg=document.getElementById('pageApice'); if(pg && !pg.hidden) renderApChart(); cxRedrawCharts(); const pf=document.getElementById('pageFunnel'); if(pf && !pf.hidden) renderOV(); },150); });
+  let apRz=0; window.addEventListener('resize',()=>{ clearTimeout(apRz); apRz=setTimeout(()=>{ const pg=document.getElementById('pageApice'); if(pg && !pg.hidden) renderApChart(); cxRedrawCharts(); const pf=document.getElementById('pageFunnel'); if(pf && !pf.hidden) renderOV(); const pq=document.getElementById('pageQual'); if(pq && !pq.hidden) qlRenderDay(); },150); });
+  qlInit();
   // Otimização V2: métrica das linhas e limpar filtro
   document.querySelectorAll('#ovMetric button').forEach(b=>b.onclick=()=>{ OV.metric=b.dataset.m; renderOV(); });
   document.getElementById('ovClear').onclick=()=>{ OV.sel={camp:null,adset:null,ad:null}; renderOV(); };
@@ -1718,7 +1964,8 @@ function init(){
   renderInsights();
   renderDatas();
   const hash=location.hash.toLowerCase();
-  if(hash.includes('funil')||hash.includes('funnel')){ document.querySelector('.pagebtn[data-page="funnel"]').click(); }
+  if(hash.includes('qualif')){ document.querySelector('.pagebtn[data-page="qual"]').click(); }
+  else if(hash.includes('funil')||hash.includes('funnel')){ document.querySelector('.pagebtn[data-page="funnel"]').click(); }
   else if(hash.includes('insight')){ document.querySelector('.pagebtn[data-page="insights"]').click(); }
   else if(hash.includes('obj')){ document.querySelector('.pagebtn[data-page="obj"]').click(); }
   else if(hash.includes('tempo')){ document.querySelector('.pagebtn[data-page="tempo"]').click(); }

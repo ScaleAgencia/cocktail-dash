@@ -25,6 +25,7 @@
   <nav class="pagenav">
     <button class="pagebtn active" data-page="consolidado">🧭 Consolidado</button>
     <button class="pagebtn" data-page="funnel">📊 Funil</button>
+    <button class="pagebtn" data-page="qual">✅ Qualificação Comercial</button>
     <button class="pagebtn" data-page="sd">🩺 SD</button>
     <button class="pagebtn" data-page="datas">📅 Datas</button>
     <button class="pagebtn" data-page="obj">🧠 Objeções</button>
@@ -167,7 +168,7 @@
     <div class="card">
       <div class="tabs">
         <div class="chart-title">Otimização — Campanha › Conjunto › Anúncio</div>
-        <div class="micro-note">Clique numa <b>campanha</b> pra abrir os conjuntos, e num <b>conjunto</b> pra abrir os anúncios. CPL QLF colorido (verde = mais barato).</div>
+        <div class="micro-note">Clique numa <b>campanha</b> pra abrir os conjuntos, e num <b>conjunto</b> pra abrir os anúncios. CPL QLF colorido (verde = mais barato). <b>% real</b> = confirmadas ÷ avaliadas pelo comercial na aba Qualificação Comercial (— = nenhuma avaliada ainda).</div>
       </div>
       <div class="table-scroll"><table id="optTable"><thead></thead><tbody></tbody></table></div>
     </div>
@@ -180,7 +181,7 @@
             <div class="ov-sub">Clique numa linha (ou na legenda do gráfico) para filtrar tudo só para ela · clique de novo para limpar · as tabelas continuam completas para trocar direto</div>
           </div>
           <div class="ov-ctrl"><span class="ov-lab">Linhas:</span>
-            <div class="ov-seg" id="ovMetric" role="group" aria-label="Métrica das linhas"><button data-m="cplq" class="on">Custo MQL</button><button data-m="cpl">CPL</button><button data-m="qlf">MQL</button><button data-m="leads">Leads</button><button data-m="sales">Vendas</button><button data-m="spend">Investimento</button></div>
+            <div class="ov-seg" id="ovMetric" role="group" aria-label="Métrica das linhas"><button data-m="cplq" class="on">Custo MQL</button><button data-m="cpl">CPL</button><button data-m="qlf">MQL</button><button data-m="txreal">% real</button><button data-m="leads">Leads</button><button data-m="sales">Vendas</button><button data-m="spend">Investimento</button></div>
           </div>
         </div>
         <div class="ov-crumbbar"><span class="ov-lab">Filtro ativo:</span><span id="ovCrumb"></span><button class="ov-clear" id="ovClear" hidden>✕ limpar filtro</button></div>
@@ -199,6 +200,69 @@
     </div>
   </section>
   </div><!--/pageFunnel-->
+
+  <div id="pageQual" hidden>
+    <section class="ql-hero" id="qlHero"></section>
+
+    <div class="card ql-card">
+      <div class="ql-h">
+        <div>
+          <div class="chart-title">Qual campanha traz mais qualificadas de verdade</div>
+          <div class="ql-sub">Ordem pelo volume de qualificadas reais. Clique numa campanha para ver só as leads dela na lista abaixo.</div>
+        </div>
+        <div class="ov-seg" id="qlLvl" role="group" aria-label="Nível do ranking"><button data-l="0" class="on">Campanha</button><button data-l="1">Conjunto</button><button data-l="2">Anúncio</button></div>
+      </div>
+      <div class="ql-hl" id="qlHl"></div>
+      <div class="table-scroll ql-rank-wrap"><table class="ql-rank" id="qlRank"></table></div>
+      <div class="ql-legend"><span><i class="ok"></i>✓ Qualificada real</span><span><i class="no"></i>✗ Não qualificada</span><span><i class="pend"></i>Falta avaliar</span><span class="ql-legnote">Custo MQL real = custo MQL ÷ taxa real</span></div>
+    </div>
+
+    <div class="ql-two">
+      <div class="card ql-card">
+        <div class="chart-title">Por dia de entrada da lead</div>
+        <div id="qlDay" class="ql-day"></div>
+        <div class="ql-legend"><span><i class="ok"></i>✓ Qualificada real</span><span><i class="no"></i>✗ Não qualificada</span><span><i class="pend"></i>Falta avaliar</span></div>
+      </div>
+      <div class="card ql-card">
+        <div class="chart-title">Por que não eram qualificadas</div>
+        <div id="qlWhy" class="ql-bars"></div>
+        <div class="chart-title ql-t2">Quem já avaliou</div>
+        <div id="qlBy" class="ql-bars"></div>
+      </div>
+    </div>
+
+    <div class="card ql-card" id="qlListCard">
+      <div class="ql-h">
+        <div>
+          <div class="chart-title">Avaliar as leads</div>
+          <div class="ql-sub">✓ é qualificada de verdade, ✗ não é. Clique de novo para desfazer. Tudo salva na hora e aparece para o time todo.</div>
+        </div>
+        <div id="qlMe"></div>
+      </div>
+      <div class="ql-gate" id="qlGate">
+        <div class="ql-lock" aria-hidden="true">🔒</div>
+        <div class="ql-gate-b">
+          <b>Lista só para o time</b>
+          <p>Nomes, e-mails e telefones são dados pessoais das leads e este site é aberto. Entre com o código do time para ver a lista. Os números acima continuam visíveis para todo mundo.</p>
+          <form id="qlLogin" autocomplete="off">
+            <input id="qlWhoIn" list="qlTeam" placeholder="Seu nome" aria-label="Seu nome" maxlength="40" autocomplete="off">
+            <datalist id="qlTeam"></datalist>
+            <input id="qlCodeIn" type="password" placeholder="Código do time" aria-label="Código do time" autocomplete="off">
+            <button type="submit">Entrar</button>
+          </form>
+          <div class="ql-err" id="qlErr" role="alert"></div>
+        </div>
+      </div>
+      <div class="ql-tools" id="qlTools" hidden>
+        <div class="ov-seg" id="qlSt" role="group" aria-label="Filtrar por situação"><button data-st="pend" class="on">Faltam <em>0</em></button><button data-st="ok">✓ Reais <em>0</em></button><button data-st="no">✗ Não <em>0</em></button><button data-st="all">Todas <em>0</em></button></div>
+        <input id="qlSearch" type="search" placeholder="Buscar por nome ou e-mail" aria-label="Buscar por nome ou e-mail">
+        <select id="qlCamp" aria-label="Filtrar por campanha"></select>
+        <select id="qlSortSel" aria-label="Ordem da lista"><option value="new">Mais recentes primeiro</option><option value="old">Mais antigas primeiro</option></select>
+      </div>
+      <div id="qlRows" class="ql-rows"></div>
+      <div id="qlMore" class="ql-morebox"></div>
+    </div>
+  </div><!--/pageQual-->
 
   <div id="pageSd" hidden>
     <div class="card health" id="healthCard"></div>
@@ -375,7 +439,7 @@
 <script>
   // carrega os dados + app sempre frescos (cache-bust por timestamp) — F5 normal ja mostra o ultimo
   (function(){ var v = Date.now();
-    ['data.js','data-perfil.js','data-apice.js','data-insights.js','data-ascensao.js','data-datas.js','app.js'].forEach(function(f){
+    ['data.js','data-perfil.js','data-apice.js','data-insights.js','data-ascensao.js','data-datas.js','data-qual.js','app.js'].forEach(function(f){
       document.write('<script src="' + f + '?t=' + v + '"><\/script>');
     });
   })();

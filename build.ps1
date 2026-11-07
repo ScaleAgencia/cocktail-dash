@@ -11,7 +11,7 @@
 #    insights   -> data-insights.js (insights)   cron semanal
 #    perfil     -> data-perfil.js   (objecoes/compradoras/tempo POR PESSOA, filtravel por data) — tambem sai em all/estudo
 #    all        -> os 3 (uso local/manual)
-param([ValidateSet('all','traffic','objections','insights','estudo','apice','ascensao','datas','perfil')][string]$Mode='all')
+param([ValidateSet('all','traffic','objections','insights','estudo','apice','ascensao','datas','perfil','qual')][string]$Mode='all')
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $BR = [Globalization.CultureInfo]::GetCultureInfo('pt-BR')
@@ -884,6 +884,40 @@ if($Mode -eq 'all' -or $Mode -eq 'datas'){
     # sem o arquivo os valores voltariam a oscilar na tela: melhor manter o ultimo data-datas.js publicado
     Write-Host "::error::datas-travado.json ausente ou invalido: aba Datas NAO atualizada."
   }
+}
+
+# ===================================================================
+#  QUALIFICACAO COMERCIAL (data-qual.js) - 1 linha por lead QUALIFICADA, igual ao que soma em daily/grain.
+#  SEM PII: o site e o repo sao publicos, entao aqui so vai um codigo derivado do e-mail (SHA-256 truncado).
+#  Nome/e-mail/telefone ficam no backend (qual-backend/Code.gs), que devolve so para quem tem o codigo do time.
+#  ID e salt precisam ser identicos aos do Code.gs (idOf_).
+# ===================================================================
+if($Mode -eq 'all' -or $Mode -eq 'qual'){
+  $qlSha=[Security.Cryptography.SHA256]::Create(); $qlEnc=New-Object Text.UTF8Encoding($false)
+  function QualId($em){ return 'q'+[BitConverter]::ToString($script:qlSha.ComputeHash($script:qlEnc.GetBytes('ccn|'+$em)),0,6).Replace('-','').ToLower() }
+  function QlIdx($dict,$list,$val){ if($dict.ContainsKey($val)){ return $dict[$val] }; $pos=$list.Count; $list.Add($val); $dict[$val]=$pos; return $pos }
+  $qlDays=New-Object System.Collections.Generic.List[string]; $qlDaysI=@{}; $qlCamps=New-Object System.Collections.Generic.List[string]; $qlCampsI=@{}
+  $qlSets=New-Object System.Collections.Generic.List[string]; $qlSetsI=@{}; $qlAds=New-Object System.Collections.Generic.List[string]; $qlAdsI=@{}
+  $qlFats=New-Object System.Collections.Generic.List[string]; $qlFatsI=@{}
+  $qlBody=New-Object Text.StringBuilder; $qlTotal=0; $qlNoMail=0; $qlPerGrain=@{}
+  function QlAdd($em,$dd,$cc,$ss,$aa,$ff){
+    $gk="$dd`u$cc`u$ss`u$aa"; if($script:qlPerGrain.ContainsKey($gk)){ $script:qlPerGrain[$gk]++ } else { $script:qlPerGrain[$gk]=1 }
+    if($em -notmatch '@'){ $script:qlNoMail++; return }
+    $line='["'+(QualId $em)+'",'+(QlIdx $script:qlDaysI $script:qlDays $dd)+','+(QlIdx $script:qlCampsI $script:qlCamps $cc)+','+(QlIdx $script:qlSetsI $script:qlSets $ss)+','+(QlIdx $script:qlAdsI $script:qlAds $aa)+','+(QlIdx $script:qlFatsI $script:qlFats $ff)+']'
+    if($script:qlTotal -gt 0){ [void]$script:qlBody.Append(',') }; [void]$script:qlBody.Append($line); $script:qlTotal++ }
+  foreach($r in $ld){ $dq=Norm $r[$L_DATE]; if($dq -notmatch '^\d{4}-\d{2}-\d{2}$'){continue}; if(-not (IsQual $r[$L_FAT] $r[$L_VOCE])){continue}   # mesmas regras do loop do grain
+    $cq=CleanUtm $r[$L_CAMP]; if($cq -eq ''){$cq='SEM_UTM'}; $sq=CleanUtm $r[$L_SET]; if($sq -eq ''){$sq='SEM_UTM'}; $aq=AdCode (CleanUtm $r[$L_CONT]); if($aq -eq ''){$aq='SEM_UTM'}
+    QlAdd (Norm $r[$L_EMAIL]).ToLower() $dq $cq $sq $aq (Norm $r[$L_FAT]) }
+  foreach($r in $ffd){ $cq=Norm $r[$FF_CAMP]; if($cq -eq '' -or -not (IsFormsCamp $cq)){continue}; $dq=''; $tq=Norm $r[$FF_DATE]; if($tq -match '(\d{4})-(\d{2})-(\d{2})'){ $dq=$Matches[0].Substring(0,10) }; if($dq -eq ''){continue}
+    if(-not (IsQualForms $r[$FF_FAT] $r[$FF_VOCE])){continue}; QlAdd (Norm $r[$FF_EMAIL]).ToLower() $dq $cq (Norm $r[$FF_SET]) (AdCode $r[$FF_AD]) (Norm $r[$FF_FAT]) }
+  # conferencia: cada celula do grain tem que ter exatamente as mesmas qualificadas que a dash ja soma
+  $qlDiff=0; foreach($gk in $grain.Keys){ $qn=0; if($qlPerGrain.ContainsKey($gk)){ $qn=$qlPerGrain[$gk] }; if($grain[$gk].qlf -ne $qn){ $qlDiff++ } }
+  if($qlDiff -or $qlNoMail){ Write-Host ("::warning::QUAL: {0} celulas do grain divergem | {1} qualificadas sem e-mail" -f $qlDiff,$qlNoMail) }
+  Write-Host ("QUAL: {0} qualificadas na lista | sem e-mail {1} | celulas divergentes {2}" -f $qlTotal,$qlNoMail,$qlDiff)
+  $qlJson='{"generatedAt":"'+$nowIso+'","generatedAtBR":"'+$nowBR+'","total":'+$qlTotal
+  foreach($qlPair in @(@('days',$qlDays),@('camps',$qlCamps),@('sets',$qlSets),@('ads',$qlAds),@('fats',$qlFats))){ $qlJson+=',"'+$qlPair[0]+'":'+(ConvertTo-Json -InputObject ([string[]]$qlPair[1].ToArray()) -Compress) }
+  $qlJson+=',"rows":['+$qlBody.ToString()+']}'
+  [IO.File]::WriteAllText((Join-Path $root 'data-qual.js'),('window.DASH_QUAL='+$qlJson+';'),$utf8)
 }
 
 # ---- emit (por modo) ----------------------------------------------
