@@ -1,13 +1,11 @@
 // Cocktail Cardi Nigro · Qualificação Comercial — backend (Google Apps Script, publicado como app da web).
 //
-// Por que existe: a dash é um site estático e público (GitHub Pages), então não pode guardar marcações nem mostrar
-// e-mails abertos. Aqui ficam: as marcações do comercial (planilha privada criada na 1ª execução) e o acesso aos
-// nomes/e-mails/telefones, entregues só para quem informa o código do time.
-//   GET  ?a=marks&v=<versão>  público, sem dados pessoais: { id: [status, motivo, quem, quando] }
-//   POST {a:'login'|'list'|'mark', code, ...}  exige o código do time
-//   GET  ?a=selftest           confere a instalação e devolve só contagens, nunca dados pessoais
-// O código do time fica na aba "config", célula B1, da planilha "Cocktail · Qualificação Comercial (base da dash)".
-// Para trocar o código basta editar a célula; vale em até 1 minuto, sem republicar.
+// Por que existe: a dash é um site estático (GitHub Pages) e não tem onde guardar marcações. Aqui ficam as marcações do
+// comercial (planilha privada criada na 1ª execução) e a leitura de nome e e-mail das leads qualificadas.
+// Lista aberta para quem tem o link, por decisão do cliente (07/11/2026). Telefone não é enviado.
+//   GET  ?a=marks&v=<versão>  marcações: { id: [status, motivo, quem, quando] }
+//   POST {a:'list'|'mark', ...}  lista de nome e e-mail, e gravação das marcações
+//   GET  ?a=selftest           confere a instalação e devolve só contagens
 
 var MASTER_ID = '1WuETdVje43yvMfyQDHO1PObXj_G9G-t6JjG6q987Z4o', LEADS_GID = '603619749';
 var FORMS_ID = '1HuURt5bclbK2lUhbnDWvYmlwQowif-gFoVl_HV3Ukws', FORMS_GID = '0';
@@ -33,8 +31,6 @@ function doGet(e) {
 function doPost(e) {
   try {
     var b = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    if (!codeOk_(b.code)) { Utilities.sleep(700); return out_({ ok: false, err: 'codigo' }); }
-    if (b.a === 'login') return out_({ ok: true });
     if (b.a === 'list') { var mp = leadsMap_(!!b.fresh); return out_({ ok: true, at: mp.at, map: mp.map }); }
     if (b.a === 'mark') return out_(mark_(b));
     return out_({ ok: false, err: 'acao' });
@@ -60,22 +56,11 @@ function db_() {
     sh.setFrozenRows(1);
     sh.getRange(2, COL.status + 1, sh.getMaxRows() - 1, 1).setDataValidation(
       SpreadsheetApp.newDataValidation().requireValueInList([ST_OK, ST_NO], true).setAllowInvalid(true).build());
-    var cfg = ss.insertSheet('config');
-    cfg.getRange(1, 1, 3, 2).setValues([
-      ['Código do time', 'ccn-' + Utilities.getUuid().replace(/-/g, '').slice(0, 12)],
-      ['Como trocar', 'Edite a célula B1. Vale em até 1 minuto, sem republicar nada.'],
-      ['Aviso', 'Esta planilha tem dados pessoais das leads. Não compartilhe o link com quem não é do time.']]);
-    cfg.setColumnWidth(1, 150); cfg.setColumnWidth(2, 560);
     props_().setProperty('DB_ID', ss.getId());
     return ss;
   } finally { lock.releaseLock(); }
 }
 function sheet_() { return db_().getSheetByName('marcacoes'); }
-function codeOk_(code) {
-  var c = cache_(), real = c.get('code');
-  if (!real) { real = String(db_().getSheetByName('config').getRange('B1').getDisplayValue()).trim(); if (real) c.put('code', real, 60); }
-  return !!real && String(code == null ? '' : code).trim() === real;
-}
 
 // ---- texto grande no cache (limite de 100 KB por chave) ----
 function putBig_(key, text, ttl) {
@@ -159,7 +144,7 @@ function mark_(b) {
   return { ok: true, v: marksPayload_().v };
 }
 
-// ---- nomes, e-mails e telefones: só com o código do time ----
+// ---- nome e e-mail das leads qualificadas ----
 function idOf_(email) {
   var b = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, ID_SALT + email, Utilities.Charset.UTF_8), h = '';
   for (var i = 0; i < 6; i++) { var x = (b[i] + 256) % 256; h += (x < 16 ? '0' : '') + x.toString(16); }
@@ -203,28 +188,28 @@ function readCols_(id, gid, tests) {
   return { pos: pos, slot: pos.map(function (p) { return use.indexOf(p); }), rows: data.slice(1) };
 }
 function leadsMap_(fresh) {
-  if (!fresh) { var raw = getBig_('map'); if (raw) return JSON.parse(raw); }
+  if (!fresh) { var raw = getBig_('map2'); if (raw) return JSON.parse(raw); }
   var pub = UrlFetchApp.fetch(PUBLIC_LIST + '?t=' + Date.now(), { muteHttpExceptions: true });
   if (pub.getResponseCode() !== 200) throw new Error('lista pública respondeu ' + pub.getResponseCode());
   var want = {}, re = /"(q[0-9a-f]{12})"/g, hit, txt = pub.getContentText('UTF-8');
   while ((hit = re.exec(txt))) want[hit[1]] = 1;
   var map = {};
-  var L = readCols_(MASTER_ID, LEADS_GID, [/^nome$/i, /^sobrenome$/i, /melhor e-?mail/i, /^telefone/i]);
+  var L = readCols_(MASTER_ID, LEADS_GID, [/^nome$/i, /^sobrenome$/i, /melhor e-?mail/i]);
   if (L.pos[2] < 0) throw new Error('coluna de e-mail não encontrada nos leads');
   L.rows.forEach(function (r) {
     var em = norm_(r[L.slot[2]]).toLowerCase(); if (em.indexOf('@') < 0) return;
     var id = idOf_(em); if (!want[id]) return;
     var nm = norm_(L.slot[0] >= 0 ? r[L.slot[0]] : '') + ' ' + norm_(L.slot[1] >= 0 ? r[L.slot[1]] : '');
-    map[id] = [nm.trim(), em, norm_(L.slot[3] >= 0 ? r[L.slot[3]] : '')];
+    map[id] = [nm.trim(), em];
   });
-  var F = readCols_(FORMS_ID, FORMS_GID, [/^nome_?\s?completo$/i, /^e-?mail$/i, /^telefone$/i]);
+  var F = readCols_(FORMS_ID, FORMS_GID, [/^nome_?\s?completo$/i, /^e-?mail$/i]);
   if (F.pos[1] >= 0) F.rows.forEach(function (r) {
     var em = norm_(r[F.slot[1]]).toLowerCase(); if (em.indexOf('@') < 0) return;
     var id = idOf_(em); if (!want[id] || map[id]) return;
-    map[id] = [norm_(F.slot[0] >= 0 ? r[F.slot[0]] : ''), em, norm_(F.slot[2] >= 0 ? r[F.slot[2]] : '')];
+    map[id] = [norm_(F.slot[0] >= 0 ? r[F.slot[0]] : ''), em];
   });
   var obj = { at: Date.now(), map: map, want: Object.keys(want).length };
-  try { putBig_('map', JSON.stringify(obj), MAP_TTL); } catch (e) { /* sem cache: remonta na próxima */ }
+  try { putBig_('map2', JSON.stringify(obj), MAP_TTL); } catch (e) { /* sem cache: remonta na próxima */ }
   return obj;
 }
 
