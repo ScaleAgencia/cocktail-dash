@@ -316,20 +316,20 @@ foreach($r in $kd){ if((Norm $r[$K_STAT]) -ne 'paid'){continue}
   $em=(Norm $r[$K_EMAIL]).ToLower(); if($vendaExclE.ContainsKey($em)){continue}; $nk=NameKey $r[$K_NOME]; if($nk -match ' ' -and $vendaExclN.ContainsKey($nk)){continue}   # cancelado sai
   $d=BrDate $r[$K_DATE]; if($d -eq ''){continue}
   $sv=TitleName $r[$K_SRC]; if($SELLER_ALIAS.ContainsKey($sv)){ $sv=$SELLER_ALIAS[$sv] }; if($sv -eq ''){$sv='SEM_VENDEDORA'}
-  $key="$d`u$sv"; if(-not $sellers.ContainsKey($key)){ $sellers[$key]=[pscustomobject]@{date=$d;seller=$sv;sales=0;revenue=0.0;daysSum=0;daysN=0;fat=@(0,0,0,0,0,0)} }
+  $key="$d`u$sv"; if(-not $sellers.ContainsKey($key)){ $sellers[$key]=[pscustomobject]@{date=$d;seller=$sv;sales=0;revenue=0.0;daysSum=0;daysN=0;days=@();fat=@(0,0,0,0,0,0)} }
   $o=$sellers[$key]; $o.sales++; $o.revenue += (MoneyKiwify $r[$K_REV])
   $e=(Norm $r[$K_EMAIL]).ToLower()
   if($e -ne '' -and $leadFirst.ContainsKey($e)){ $lf=$leadFirst[$e]
     $l0=[datetime]::ParseExact($lf.date,'yyyy-MM-dd',$null); $p0=[datetime]::ParseExact($d,'yyyy-MM-dd',$null); $dd=($p0-$l0).Days
-    if($dd -ge 0){ $o.daysSum += $dd; $o.daysN++ }
+    if($dd -ge 0){ $o.daysSum += $dd; $o.daysN++; $o.days += $dd }
     $fi=$FAT6.IndexOf($lf.fat); if($fi -ge 0){ $o.fat[$fi]++ } } }   # fat = compradoras por faixa de faturamento
 # vendas EXTRAS (planilha nova) no Comercial — usa a coluna VENDEDOR, mesma normalizacao de nome
 foreach($x in $extras){ $sv=TitleName $x.seller; if($SELLER_ALIAS.ContainsKey($sv)){ $sv=$SELLER_ALIAS[$sv] }; if($sv -eq ''){$sv='SEM_VENDEDORA'}
-  $key="$($x.date)`u$sv"; if(-not $sellers.ContainsKey($key)){ $sellers[$key]=[pscustomobject]@{date=$x.date;seller=$sv;sales=0;revenue=0.0;daysSum=0;daysN=0;fat=@(0,0,0,0,0,0)} }
+  $key="$($x.date)`u$sv"; if(-not $sellers.ContainsKey($key)){ $sellers[$key]=[pscustomobject]@{date=$x.date;seller=$sv;sales=0;revenue=0.0;daysSum=0;daysN=0;days=@();fat=@(0,0,0,0,0,0)} }
   $o=$sellers[$key]; $o.sales++; $o.revenue += $x.valor
   if($leadFirst.ContainsKey($x.email)){ $lf=$leadFirst[$x.email]
     $l0=[datetime]::ParseExact($lf.date,'yyyy-MM-dd',$null); $p0=[datetime]::ParseExact($x.date,'yyyy-MM-dd',$null); $dd=($p0-$l0).Days
-    if($dd -ge 0){ $o.daysSum += $dd; $o.daysN++ }
+    if($dd -ge 0){ $o.daysSum += $dd; $o.daysN++; $o.days += $dd }
     $fi=$FAT6.IndexOf($lf.fat); if($fi -ge 0){ $o.fat[$fi]++ } } }
 $sellersArr=@($sellers.Values | Sort-Object date)
 
