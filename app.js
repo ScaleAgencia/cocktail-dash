@@ -1709,7 +1709,7 @@ function buildPresets(){
 // Site e repositório são públicos, então nada de dado pessoal vem do build: data-qual.js traz 1 linha por MQL com um código
 // derivado do e-mail. Marcações e nomes/e-mails ficam no backend (qual-backend/Code.gs); nomes e e-mails só com o código do time.
 const QD = window.DASH_QUAL || null;
-const QUAL_API = location.hostname==='localhost' ? '/__qual' : '';
+const QUAL_API = location.hostname==='localhost' ? '/__qual' : 'https://script.google.com/macros/s/AKfycby_CCF9BctQJeblE6AcS9iF4iolGMkiTNlHQXl0hkiFFldHrZW61d1HKejstje-b3OyGQ/exec';   // app da web publicado de qual-backend/Code.gs
 const QL_REASONS=['Sem perfil','Sem dinheiro','Sem data','Não responde','Contato inválido'];
 const QL_TEAM=['Evellyn','Mayara','Mayra'];
 const QL_PAGE=40, QL_POLL_TAB=6000, QL_POLL_FUNIL=15000, QL_POLL_IDLE=45000;
