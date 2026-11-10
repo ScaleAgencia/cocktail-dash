@@ -1718,7 +1718,7 @@ function buildPresets(){
 const QD = window.DASH_QUAL || null;
 const QUAL_API = location.hostname==='localhost' ? '/__qual' : 'https://script.google.com/macros/s/AKfycby_CCF9BctQJeblE6AcS9iF4iolGMkiTNlHQXl0hkiFFldHrZW61d1HKejstje-b3OyGQ/exec';   // app da web publicado de qual-backend/Code.gs
 const QL_REASONS=['Sem perfil','Sem dinheiro','Sem data','Não responde','Contato inválido'];
-const QL_TEAM=['Evellyn','Mayara','Mayra'];
+const QL_TEAM=['Evellyn','Mayara','Mayra','Erika','Sabrina'];   // sugestões do campo "Quem está marcando" (o campo aceita qualquer nome digitado)
 const QL_PAGE=40, QL_POLL_TAB=6000, QL_POLL_FUNIL=15000, QL_POLL_IDLE=45000;
 const qlKey=(d,c,s,a)=>`${d}\u0001${c}\u0001${s}\u0001${a}`.toLowerCase();   // o build agrupa sem diferenciar maiúsculas
 const QL_ROWS=(()=>{ if(!QD) return [];
