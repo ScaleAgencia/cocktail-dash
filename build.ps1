@@ -146,6 +146,15 @@ $ff = @(Read-Csv $fCsv); $ffh = $ff[0]; $ffd = @(); if($ff.Count -gt 1){ $ffd = 
 $Q_DAY=HdrIndex $qh 'Day'; $Q_CAMP=HdrIndex $qh 'Campaign Name'; $Q_SET=HdrIndex $qh 'Ad Set Name'
 $Q_AD=HdrIndex $qh 'Ad Name'; $Q_SPEND=HdrIndex $qh 'Amount Spent'; $Q_IMP=HdrIndex $qh 'Impressions'
 $Q_CLK=HdrIndex $qh 'Link Clicks'; $Q_LPV=HdrIndex $qh 'Landing Page Views'
+# GASTO EXCLUIDO A PEDIDO DO CLIENTE: campanha + dia que nao entram na dash (sai a linha inteira da query: gasto,
+# impressoes, cliques e LPV; os leads da campanha continuam). Nome = Campaign Name exato da query. Para desfazer, apagar a linha.
+$SPEND_EXCL=@(
+  @{ date='2026-11-10'; campaign='CCN | CAPTACAO | ALL FRIO | CONV | CBO | 29/10/2026 | TOP ADS | SP' }   # 10/11/2026: gasto real acima do que a planilha trazia
+)
+if($SPEND_EXCL.Count){ $qdKeep=New-Object System.Collections.Generic.List[object]; $qdCut=0; $qdCutSpend=0.0
+  foreach($r in $qd){ $cutRow=$false; foreach($ex in $SPEND_EXCL){ if((Norm $r[$Q_DAY]) -eq $ex.date -and (Norm $r[$Q_CAMP]) -eq $ex.campaign){ $cutRow=$true; break } }
+    if($cutRow){ $qdCut++; $qdCutSpend+=(MoneyBR $r[$Q_SPEND]) } else { $qdKeep.Add($r) } }
+  $qd=$qdKeep; Write-Host ("GASTO EXCLUIDO: {0} linhas de query, R$ {1:N2} sem imposto" -f $qdCut,$qdCutSpend) }
 
 $L_EMAIL=HdrLike $lh '*melhor E-mail*'; $L_FAT=HdrLike $lh '*faturamento mensal*'
 $L_DATE=HdrIndex $lh 'Data Formatada'; $L_CAMP=HdrIndex $lh 'utm_campaign'; $L_SET=HdrIndex $lh 'utm_medium'
