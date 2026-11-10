@@ -146,17 +146,16 @@ $ff = @(Read-Csv $fCsv); $ffh = $ff[0]; $ffd = @(); if($ff.Count -gt 1){ $ffd = 
 $Q_DAY=HdrIndex $qh 'Day'; $Q_CAMP=HdrIndex $qh 'Campaign Name'; $Q_SET=HdrIndex $qh 'Ad Set Name'
 $Q_AD=HdrIndex $qh 'Ad Name'; $Q_SPEND=HdrIndex $qh 'Amount Spent'; $Q_IMP=HdrIndex $qh 'Impressions'
 $Q_CLK=HdrIndex $qh 'Link Clicks'; $Q_LPV=HdrIndex $qh 'Landing Page Views'
-# TAG "EXCLUIR DASH" (pedido do cliente 10/11/2026): campanha com essa tag no nome (renomeada no Gerenciador) some da dash
-# inteira, em qualquer dia: linha da query (gasto, impressoes, cliques, LPV) e os leads com esse utm_campaign/campaign_name.
-$EXCL_TAG='(?i)excluir\s*-?\s*dash'
 # GASTO EXCLUIDO A PEDIDO DO CLIENTE: campanha + dia que nao entram na dash (sai a linha inteira da query: gasto,
-# impressoes, cliques e LPV; os leads da campanha continuam). Nome = Campaign Name exato da query. Para desfazer, apagar a linha.
+# impressoes, cliques e LPV; os leads da campanha continuam). Nome = Campaign Name exato da query, SEM diferenciar maiusculas.
+# Se a campanha for renomeada no Gerenciador, o gasto volta com o nome novo: incluir o nome novo tambem. Para desfazer, apagar a linha.
 $SPEND_EXCL=@(
-  @{ date='2026-11-10'; campaign='CCN | CAPTACAO | ALL FRIO | CONV | CBO | 29/10/2026 | TOP ADS | SP' }   # 10/11/2026: gasto real acima do que a planilha trazia
+  @{ date='2026-11-10'; campaign='CCN | CAPTACAO | ALL FRIO | CONV | CBO | 29/10/2026 | TOP ADS | SP' }                 # 10/11/2026: so o dia 10/11 (pedido do cliente)
+  @{ date='2026-11-10'; campaign='CCN | CAPTACAO | ALL FRIO | CONV | CBO | 29/10/2026 | TOP ADS | SP - EXCLUIR DASH' }   # mesma campanha, renomeada no mesmo dia
 )
 $qdKeep=New-Object System.Collections.Generic.List[object]; $qdCut=0; $qdCutSpend=0.0
-foreach($r in $qd){ $cutRow=((Norm $r[$Q_CAMP]) -match $EXCL_TAG)
-  if(-not $cutRow){ foreach($ex in $SPEND_EXCL){ if((Norm $r[$Q_DAY]) -eq $ex.date -and (Norm $r[$Q_CAMP]) -eq $ex.campaign){ $cutRow=$true; break } } }
+foreach($r in $qd){ $cutRow=$false
+  foreach($ex in $SPEND_EXCL){ if((Norm $r[$Q_DAY]) -eq $ex.date -and (Norm $r[$Q_CAMP]) -eq $ex.campaign){ $cutRow=$true; break } }
   if($cutRow){ $qdCut++; $qdCutSpend+=(MoneyBR $r[$Q_SPEND]) } else { $qdKeep.Add($r) } }
 $qd=$qdKeep; Write-Host ("GASTO EXCLUIDO: {0} linhas de query, R$ {1:N2} sem imposto" -f $qdCut,$qdCutSpend)
 
@@ -181,10 +180,6 @@ $L_VOCE=HdrLike $lh '*Voc*'                       # [5] "Você é…" (1o header
 $L_EQ=HdrLike $lh '*equipe*'                      # [6] tamanho da equipe
 $L_FREQ=HdrLike $lh '*poderia estar faturando*'   # [10] frequencia
 $L_INTENT=HdrLike $lh '*3.997*'                   # [13] intencao de pagamento (header cita R$ 3.997)
-# leads de campanha com a tag EXCLUIR DASH tambem saem (mesma regra da query, logo acima)
-$ldKeep=New-Object System.Collections.Generic.List[object]; $ldCut=0; foreach($r in $ld){ if((Norm $r[$L_CAMP]) -match $EXCL_TAG){ $ldCut++ } else { $ldKeep.Add($r) } }; $ld=$ldKeep
-$ffKeep=New-Object System.Collections.Generic.List[object]; $ffCut=0; foreach($r in $ffd){ if((Norm $r[$FF_CAMP]) -match $EXCL_TAG){ $ffCut++ } else { $ffKeep.Add($r) } }; $ffd=$ffKeep
-Write-Host ("TAG EXCLUIR DASH: {0} leads e {1} leads do forms fora" -f $ldCut,$ffCut)
 
 # ===================================================================
 #  DAILY (authoritative funnel totals — reproduces the print exactly)
