@@ -1875,7 +1875,7 @@ function qlRowHTML(r){ const s=qlStatus(r.id), lead=(QL.map&&QL.map[r.id])||null
     ${s<0?`<div class="ql-reasons"><span>Motivo:</span>${QL_REASONS.map(x=>`<button type="button" class="ql-chip${why===x?' on':''}" data-act="why" data-r="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}
   </div>`; }
 function qlFiltered(){ const f=QL.f, q=nkey(f.q), rows=qlPeriod().filter(r=>{ if(f.camp&&r.camp!==f.camp) return false;
-    const s=qlStatus(r.id), want=f.st==='all'||(f.st==='pend'&&s===0)||(f.st==='ok'&&s>0)||(f.st==='no'&&s<0);
+    const s=qlStatus(r.id), want=!!q||f.st==='all'||(f.st==='pend'&&s===0)||(f.st==='ok'&&s>0)||(f.st==='no'&&s<0);
     if(!want&&!QL.sticky.has(r.id)) return false;   // quem acabou de ser marcada fica na tela até trocar o filtro: a lista não pula embaixo do dedo
     if(q){ const p=QL.map&&QL.map[r.id]; if(!p||!nkey(p[0]+' '+p[1]).includes(q)) return false; }
     return true; });
